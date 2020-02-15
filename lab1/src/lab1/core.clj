@@ -1,4 +1,4 @@
-(ns mycloj-pr.core
+(ns lab1.core
   (:gen-class))
 
 ;(let [x (let [u 4] u)
