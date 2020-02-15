@@ -56,9 +56,10 @@
 ;відповідно до варіанта індивідуального завдання зі списку. Набори для
 ;множин взяти в таблиці 1.
 
-(def A (set '(1 2)))
-(def B (set '(2 3)))
+(def A (set firstList))
+(def B (set secondList))
 (def AB (clojure.set/union A B))
+
 
 (defn expr [a b ab]
   (clojure.set/intersection
