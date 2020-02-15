@@ -1,4 +1,4 @@
-target
+/target
 /classes
 /checkouts
 profiles.clj
@@ -10,8 +10,3 @@ pom.xml.asc
 /.nrepl-port
 .hgignore
 .hg/
-.idea
-doc
-test
-resources
-default
