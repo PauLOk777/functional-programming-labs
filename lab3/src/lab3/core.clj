@@ -5,26 +5,35 @@
             [clojure.data.csv :as csv]
             [clojure.java.io :as io]))
 
+(defn readTSV [name]
+  (map #(str/split % #"\t")
+       (str/split (slurp name) #"\r\n")))
 
-(defn getFile [name]
-  (def string1 (slurp name))
-  string1)
-
-(defn makeTableTSV [name]
-  (map #(clojure.string/split % "\t")
-       (clojure.string/split (getFile name) #"\n")))
-
-(defn makeTableCSV [name]
+(defn readCSV [name]
   (with-open [reader (io/reader name)]
     (doall
       (csv/read-csv reader))))
 
+(defn data->maps [head & lines]
+  (map #(zipmap (map keyword head) %1) lines))
+
+(defn makeTableTSV [name]
+  (apply data->maps (readTSV name)))
+
+(defn makeTableCSV [name]
+  (apply data->maps (readCSV name)))
+
 (defn printTable [table]
+  (loop [k 0]
+    (when (< k (count (first table)))
+      (print (format "%40s| " (name (nth (keys (first table)) k))))
+      (recur (+ k 1))))
+  (println)
   (loop [i 0]
     (when (< i (count table))
       (loop [j 0]
         (when (< j (count (nth table i)))
-          (print (format "%40s| " (nth (nth table i) j)))
+          (print (format "%40s| " (nth (vals (nth table i)) j)))
           (recur (+ j 1))))
       (println "")
       (recur (+ i 1)))))
@@ -41,40 +50,3 @@
   (if (checkFormat input)
     (printTable (makeTableCSV input))
     (printTable (makeTableTSV input))))
-
-;(-main)
-;(getRegexp 3)
-;
-;(loop [x 0]
-;  (when (< x 5)
-;    (println (format "%s|%s" "123" "4566"))
-;    (recur (+ x 1))))
-;(format "%s" (nth [1 "dd"] 1))
-;
-;(.indexOf ["t" "v" "d"] "d")
-;
-;(with-open [reader (clojure.java.io/reader "mp-posts_full.csv")]
-;  (doall
-;    (csv/read-csv reader)))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
