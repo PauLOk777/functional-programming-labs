@@ -59,14 +59,44 @@
     (makeTableCSV name)
     (makeTableTSV name)))
 
+(defn whereClause [table words commands]
+  (def whereIndex (.indexOf (map #(str/upper-case %) words) (nth commands 2)))
+  (cond
+    (= -1 whereIndex) table
+
+    (and
+      (= 0 (compare (nth words (+ whereIndex 2)) "="))
+      (every? #(Character/isDigit %) (nth words (+ whereIndex 3))))
+        (filter
+          #(= 0 (compare (read-string (get % (keyword (nth words (+ whereIndex 1)))))
+                         (read-string (nth words (+ whereIndex 3))))) table)
+
+    (and
+      (= 0 (compare (nth words (+ whereIndex 2)) ">"))
+      (every? #(Character/isDigit %) (nth words (+ whereIndex 3))))
+        (filter
+          #(< 0 (compare (read-string (get % (keyword (nth words (+ whereIndex 1)))))
+                         (read-string (nth words (+ whereIndex 3))))) table)
+
+    (= 0 (compare (nth words (+ whereIndex 2)) "="))
+    (filter
+      #(= 0 (compare (get % (keyword (nth words (+ whereIndex 1))))
+                     (nth words (+ whereIndex 3)))) table)
+
+    (= 0 (compare (nth words (+ whereIndex 2)) "="))
+    (filter
+      #(< 0 (compare (get % (keyword (nth words (+ whereIndex 1))))
+                     (nth words (+ whereIndex 3)))) table)
+    :else []))
+
 (defn getColumn [columnName file]
   (map #(select-keys % [(keyword columnName)]) file))
 
-(defn getMainTable [columns fileName]
+(defn getMainTable [columns words fileName commands]
   (def file (getFile fileName))
-    (map #(if (not= 0 (compare % "*"))
-            (getColumn % file)
-            file) columns))
+  (map #(if (not= 0 (compare % "*"))
+          (getColumn % (whereClause file words commands))
+          (whereClause file words commands)) columns))
 
 (defn withDistinct [expr commands]
   [])
@@ -75,7 +105,7 @@
   (cond
     (not= 0 (compare (str/upper-case (nth words 2)) (nth commands 1))) []
     :else
-    (getMainTable (str/split (nth words 1) #",") (nth words 3))))
+    (getMainTable (str/split (nth words 1) #",") words (nth words 3) commands)))
 
 (defn processColumns [words commands]
   (if (not= 0 (compare (str/upper-case (nth words 1)) (nth commands 3)))
@@ -83,7 +113,7 @@
     (withDistinct words commands)))
 
 (defn getResult [expr commands]
-  (def words (str/split expr #"\s"))
+  (def words (re-seq #"\"\D+\"|[\S]+" expr))
   (if (not= 0 (compare (str/upper-case (first words)) (first commands))) []
     (processColumns words commands)))
 
@@ -93,3 +123,7 @@
   (def input (read-line))
   (def commands ["SELECT" "FROM" "WHERE" "DISTINCT"])
   (printTable (getResult input commands)))
+
+(getResult "SELECT * FROM mp-assistants.csv WHERE assistant_fullname = \"Лапшин Юрій Вікторович\"" ["SELECT" "FROM" "WHERE" "DISTINCT"])
+
+;(re-seq #"\"\D+\"|[\S]+" "SELECT ALL FROM DAUN WHERE JKF = \"dAUN EBANIY оа\"")
