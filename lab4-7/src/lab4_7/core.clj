@@ -61,6 +61,7 @@
 
 (defn whereClause [table words commands]
   (def whereIndex (.indexOf (map #(str/upper-case %) words) (nth commands 2)))
+  (println (nth words (+ whereIndex 3)))
   (cond
     (= -1 whereIndex) table
 
@@ -81,12 +82,16 @@
     (= 0 (compare (nth words (+ whereIndex 2)) "="))
     (filter
       #(= 0 (compare (get % (keyword (nth words (+ whereIndex 1))))
-                     (nth words (+ whereIndex 3)))) table)
+                     (subs (nth words (+ whereIndex 3))
+                               (+ (str/index-of (nth words (+ whereIndex 3)) "\"") 1)
+                               (str/last-index-of (nth words (+ whereIndex 3)) "\"")))) table)
 
-    (= 0 (compare (nth words (+ whereIndex 2)) "="))
+    (= 0 (compare (nth words (+ whereIndex 2)) ">"))
     (filter
       #(< 0 (compare (get % (keyword (nth words (+ whereIndex 1))))
-                     (nth words (+ whereIndex 3)))) table)
+                     (subs (nth words (+ whereIndex 3))
+                           (+ (str/index-of (nth words (+ whereIndex 3)) "\"") 1)
+                           (str/last-index-of (nth words (+ whereIndex 3)) "\"")))) table)
     :else []))
 
 (defn getColumn [columnName file]
@@ -124,6 +129,5 @@
   (def commands ["SELECT" "FROM" "WHERE" "DISTINCT"])
   (printTable (getResult input commands)))
 
-(getResult "SELECT * FROM mp-assistants.csv WHERE assistant_fullname = \"Лапшин Юрій Вікторович\"" ["SELECT" "FROM" "WHERE" "DISTINCT"])
-
+;(getResult "SELECT * FROM mp-posts_full.csv WHERE full_name > \"Ясько Єлизавета Олексіївна\"" ["SELECT" "FROM" "WHERE" "DISTINCT"])
 ;(re-seq #"\"\D+\"|[\S]+" "SELECT ALL FROM DAUN WHERE JKF = \"dAUN EBANIY оа\"")
