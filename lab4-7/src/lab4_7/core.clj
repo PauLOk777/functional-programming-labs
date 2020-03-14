@@ -60,7 +60,6 @@
     (makeTableTSV name)))
 
 (defn map-sort [a b & keysOfMap]
-  (println a)
   (cond
     (and (empty? keysOfMap)
          (= 0 (compare (get a (first (keys a))) (get b (first (keys b))))))
@@ -79,6 +78,10 @@
 (defn mergestep [l r ord columns]
   (cond (empty? l) r
         (empty? r) l
+        (empty? columns)
+          (if (ord (map-sort (first l) (first r)))
+            (cons (first l) (mergestep (next l) r ord columns))
+            (cons (first r) (mergestep l (next r) ord columns)))
         :else
         (if (ord (map-sort (first l) (first r) columns))
           (cons (first l) (mergestep (next l) r ord columns))
@@ -87,13 +90,14 @@
 
 (defn mergesort
   ([data] (mergesort data neg?))
-  ([data ord] (mergesort data ord nil))
+  ([data ord] (mergesort data ord []))
   ([data ord columns]
    (if (< (count data) 2)
      data
      (mergestep
        (mergesort (first (split-at (/ (count data) 2) data)) ord columns)
-       (mergesort (second (split-at (/ (count data) 2) data)) ord columns) ord columns))))
+        (mergesort (second (split-at (/ (count data) 2) data)) ord columns)
+          ord columns))))
 
 (defn whereClause [table words commands]
   (def whereIndex (.indexOf (map #(str/upper-case %) words) (nth commands 2)))
@@ -190,16 +194,16 @@
 ;(keyword (keys (first x)))
 
 (mergesort [{:foo 1 :bar 11 :loh 2}
+            {:foo 1 :bar 11 :loh 4}
                    {:foo 2 :bar 11 :loh 3}
-                   {:foo 1 :bar 31 :loh 1}
-                   {:foo 1 :bar 11 :loh 4}] neg?)
+                   {:foo 1 :bar 31 :loh 3}] neg? [:loh :foo])
 
 ;(sort map-sort [{:foo 1 :bar 11 :loh 2}
 ;       {:foo 2 :bar 11 :loh 3}
 ;       {:foo 1 :bar 31 :loh 1}
 ;       {:foo 1 :bar 11 :loh 4}])
 ;
-;(map-sort {:foo 2 :bar 55} {:foo 1 :bar 77})
+(map-sort {:foo 1 :bar 77 :loh 2} {:foo 1 :bar 77 :loh 1})
 ;
 ;(sort map-sort [{:a 1} {:a 3} {:a 2}])
 ;
