@@ -59,9 +59,44 @@
     (makeTableCSV name)
     (makeTableTSV name)))
 
+(defn map-sort [a b & keysOfMap]
+  (println a)
+  (cond
+    (and (empty? keysOfMap)
+         (= 0 (compare (get a (first (keys a))) (get b (first (keys b))))))
+    (map-sort a b (next (keys a)))
+    (and (= 1 (count (first keysOfMap)))
+         (= 0 (compare (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))))
+    0
+    (and (> (count (first keysOfMap)) 1)
+         (= 0 (compare (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))))
+    (map-sort a b (next (first keysOfMap)))
+    (empty? keysOfMap)
+    (compare (get a (first (keys a))) (get b (first (keys b))))
+    :else
+    (compare (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))))
+
+(defn mergestep [l r ord columns]
+  (cond (empty? l) r
+        (empty? r) l
+        :else
+        (if (ord (map-sort (first l) (first r) columns))
+          (cons (first l) (mergestep (next l) r ord columns))
+          (cons (first r) (mergestep l (next r) ord columns)))))
+
+
+(defn mergesort
+  ([data] (mergesort data neg?))
+  ([data ord] (mergesort data ord nil))
+  ([data ord columns]
+   (if (< (count data) 2)
+     data
+     (mergestep
+       (mergesort (first (split-at (/ (count data) 2) data)) ord columns)
+       (mergesort (second (split-at (/ (count data) 2) data)) ord columns) ord columns))))
+
 (defn whereClause [table words commands]
   (def whereIndex (.indexOf (map #(str/upper-case %) words) (nth commands 2)))
-  (println (nth words (+ whereIndex 3)))
   (cond
     (= -1 whereIndex) table
 
@@ -103,8 +138,23 @@
           (getColumn % (whereClause file words commands))
           (whereClause file words commands)) columns))
 
-(defn withDistinct [expr commands]
-  [])
+(defn myDistinct [table columns]
+  (if (not= -1 (.indexOf columns "*"))
+    (map #(if (not= 0 (compare % "*"))
+            (getColumn % (vec (set (nth table (.indexOf columns "*")))))
+            (vec (set (nth table (.indexOf columns "*"))))))
+
+    ))                                                      ; Змерджити все і запихнути в сет
+
+(defn withDistinct [words commands]
+  (cond
+    (not= 0 (compare (str/upper-case (nth words 3)) (nth commands 1))) []
+    :else
+    (myDistinct (getMainTable
+                (str/split (nth words 2) #",")
+                words
+                (nth words 4)
+                commands) (str/split (nth words 2) #","))))
 
 (defn noDistinct [words commands]
   (cond
@@ -130,4 +180,40 @@
   (printTable (getResult input commands)))
 
 ;(getResult "SELECT * FROM mp-posts_full.csv WHERE full_name > \"Ясько Єлизавета Олексіївна\"" ["SELECT" "FROM" "WHERE" "DISTINCT"])
-;(re-seq #"\"\D+\"|[\S]+" "SELECT ALL FROM DAUN WHERE JKF = \"dAUN EBANIY оа\"")
+
+;(def x [{:foo 2 :bar 11}
+;        {:foo 1 :bar 99}
+;        {:foo 2 :bar 55}
+;        {:foo 1 :bar 77}])
+
+;(sort-by (juxt (first (keys (first x)))) x)
+;(keyword (keys (first x)))
+
+(mergesort [{:foo 1 :bar 11 :loh 2}
+                   {:foo 2 :bar 11 :loh 3}
+                   {:foo 1 :bar 31 :loh 1}
+                   {:foo 1 :bar 11 :loh 4}] neg?)
+
+;(sort map-sort [{:foo 1 :bar 11 :loh 2}
+;       {:foo 2 :bar 11 :loh 3}
+;       {:foo 1 :bar 31 :loh 1}
+;       {:foo 1 :bar 11 :loh 4}])
+;
+;(map-sort {:foo 2 :bar 55} {:foo 1 :bar 77})
+;
+;(sort map-sort [{:a 1} {:a 3} {:a 2}])
+;
+;(vec (set '({:foo 2 :bar 11}
+;      {:foo 1 :bar 99}
+;      {:foo 2 :bar 55}
+;      {:foo 1 :bar 99})))
+;
+;(merge [{:foo 2 :bar 11}
+;        {:foo 1 :bar 99}
+;        {:foo 2 :bar 55}
+;        {:foo 1 :bar 99}] [{:foo 1 :bar 99}])
+;
+;(distinct  [{:foo 2 :bar 11}
+;          {:foo 1 :bar 99}
+;          {:foo 2 :bar 55}
+;          {:foo 1 :bar 99}])
