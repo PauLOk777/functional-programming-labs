@@ -51,8 +51,8 @@
       (recur (+ i 1)))))
 
 (defn checkFormat [name]
-  (def formatFile (str/split name #"\."))
-  (if (= (str (nth formatFile 1)) "csv") true false))
+  (let [formatFile (str/split name #"\.")]
+  (if (= (str (nth formatFile 1)) "csv") true false)))
 
 (defn getFile [name]
   (if (checkFormat name)
@@ -63,17 +63,17 @@
   (cond
     (and (empty? keysOfMap)
          (= 0 (compare (get a (first (keys a))) (get b (first (keys b))))))
-    (map-sort a b (next (keys a)))
+      (map-sort a b (next (keys a)))
     (and (= 1 (count (first keysOfMap)))
          (= 0 (compare (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))))
-    0
+      0
     (and (> (count (first keysOfMap)) 1)
          (= 0 (compare (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))))
-    (map-sort a b (next (first keysOfMap)))
+      (map-sort a b (next (first keysOfMap)))
     (empty? keysOfMap)
-    (compare (get a (first (keys a))) (get b (first (keys b))))
+      (compare (get a (first (keys a))) (get b (first (keys b))))
     :else
-    (compare (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))))
+      (compare (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))))
 
 (defn mergestep [l r ord columns]
   (cond (empty? l) r
@@ -100,7 +100,7 @@
           ord columns))))
 
 (defn whereClause [table words commands]
-  (def whereIndex (.indexOf (map #(str/upper-case %) words) (nth commands 2)))
+  (let [whereIndex (.indexOf (map #(str/upper-case %) words) (nth commands 2))]
   (cond
     (= -1 whereIndex) table
 
@@ -131,34 +131,47 @@
                      (subs (nth words (+ whereIndex 3))
                            (+ (str/index-of (nth words (+ whereIndex 3)) "\"") 1)
                            (str/last-index-of (nth words (+ whereIndex 3)) "\"")))) table)
-    :else []))
+    :else [])))
+
+(defn mergeColStep [indexRow indexColumn table & map]
+  (if (= 1 (- (count table) indexColumn))
+    (merge (first map) (nth (nth table indexColumn) indexRow))
+    (mergeColStep indexRow (+ 1 indexColumn) table (merge (first map) (nth (nth table indexColumn) indexRow)))))
+
+(defn mergeColumns [table]
+              (for [i (range (count (first table)))]
+                (mergeColStep i 0 table)))
 
 (defn getColumn [columnName file]
   (map #(select-keys % [(keyword columnName)]) file))
 
 (defn getMainTable [columns words fileName commands]
-  (def file (getFile fileName))
-  (map #(if (not= 0 (compare % "*"))
-          (getColumn % (whereClause file words commands))
-          (whereClause file words commands)) columns))
-
-(defn myDistinct [table columns]
-  (if (not= -1 (.indexOf columns "*"))
+  (let [file (getFile fileName)]
     (map #(if (not= 0 (compare % "*"))
-            (getColumn % (vec (set (nth table (.indexOf columns "*")))))
-            (vec (set (nth table (.indexOf columns "*"))))))
+            (getColumn % (whereClause file words commands))
+              (whereClause file words commands))
+         columns)))
 
-    ))                                                      ; Змерджити все і запихнути в сет
+(defn myDistinct [table columns words commands]
+  (if (not= -1 (.indexOf columns "*"))
+    (let [file (distinct (mergeColumns table))]
+      (map #(if (not= 0 (compare % "*"))
+              (getColumn % (whereClause file words commands))
+              (whereClause file words commands))
+           columns))
+    (list (distinct (mergeColumns table)))))
 
 (defn withDistinct [words commands]
   (cond
     (not= 0 (compare (str/upper-case (nth words 3)) (nth commands 1))) []
     :else
     (myDistinct (getMainTable
-                (str/split (nth words 2) #",")
-                words
-                (nth words 4)
-                commands) (str/split (nth words 2) #","))))
+                  (str/split (nth words 2) #",")
+                    words
+                      (nth words 4)
+                        commands)
+                  (str/split (nth words 2) #",")
+                  words commands)))
 
 (defn noDistinct [words commands]
   (cond
@@ -172,52 +185,27 @@
     (withDistinct words commands)))
 
 (defn getResult [expr commands]
-  (def words (re-seq #"\"\D+\"|[\S]+" expr))
-  (if (not= 0 (compare (str/upper-case (first words)) (first commands))) []
-    (processColumns words commands)))
+  (let [words (re-seq #"\"\D+\"|[\S]+" expr)]
+    (if (not= 0 (compare (str/upper-case (first words)) (first commands))) []
+      (processColumns words commands))))
 
 (defn -main
   [& args]
   (println "Write your query below this: ")
-  (def input (read-line))
-  (def commands ["SELECT" "FROM" "WHERE" "DISTINCT"])
-  (printTable (getResult input commands)))
+  (let [input (read-line)
+        commands ["SELECT" "FROM" "WHERE" "DISTINCT"]]
+  (printTable (getResult input commands))))
 
-;(getResult "SELECT * FROM mp-posts_full.csv WHERE full_name > \"Ясько Єлизавета Олексіївна\"" ["SELECT" "FROM" "WHERE" "DISTINCT"])
+(mergeColumns (getResult "SELECT mp_id,assistant_type_id FROM mp-assistants.csv" ["SELECT" "FROM" "WHERE" "DISTINCT"]))
 
-;(def x [{:foo 2 :bar 11}
-;        {:foo 1 :bar 99}
-;        {:foo 2 :bar 55}
-;        {:foo 1 :bar 77}])
+;(mergesort [{:foo 1 :bar 11 :loh 2}
+;            {:foo 1 :bar 11 :loh 4}
+;            {:foo 2 :bar 11 :loh 3}
+;            {:foo 1 :bar 31 :loh 3}] neg? [:loh :foo])
 
-;(sort-by (juxt (first (keys (first x)))) x)
-;(keyword (keys (first x)))
-
-(mergesort [{:foo 1 :bar 11 :loh 2}
-            {:foo 1 :bar 11 :loh 4}
-                   {:foo 2 :bar 11 :loh 3}
-                   {:foo 1 :bar 31 :loh 3}] neg? [:loh :foo])
-
-;(sort map-sort [{:foo 1 :bar 11 :loh 2}
-;       {:foo 2 :bar 11 :loh 3}
-;       {:foo 1 :bar 31 :loh 1}
-;       {:foo 1 :bar 11 :loh 4}])
-;
-(map-sort {:foo 1 :bar 77 :loh 2} {:foo 1 :bar 77 :loh 1})
-;
-;(sort map-sort [{:a 1} {:a 3} {:a 2}])
-;
-;(vec (set '({:foo 2 :bar 11}
-;      {:foo 1 :bar 99}
-;      {:foo 2 :bar 55}
-;      {:foo 1 :bar 99})))
-;
-;(merge [{:foo 2 :bar 11}
-;        {:foo 1 :bar 99}
-;        {:foo 2 :bar 55}
-;        {:foo 1 :bar 99}] [{:foo 1 :bar 99}])
-;
 ;(distinct  [{:foo 2 :bar 11}
 ;          {:foo 1 :bar 99}
 ;          {:foo 2 :bar 55}
 ;          {:foo 1 :bar 99}])
+
+;(mergeColumns [[{:foo 1} {:foo 2} {:foo 3}] [{:bar 71} {:bar 77} {:bar 79}] [{:loh -1} {:loh 6} {:loh 1}]])
