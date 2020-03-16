@@ -48,7 +48,8 @@
                 (recur (+ z 1))))
             (recur (+ j 1))))
       (println)
-      (recur (+ i 1)))))
+      (recur (+ i 1))))
+  true)
 
 (defn checkFormat [name]
   (let [formatFile (str/split name #"\.")]
@@ -59,79 +60,97 @@
     (makeTableCSV name)
     (makeTableTSV name)))
 
+(defn compareForStringNumber [a b]
+  (cond
+    (number? a) (compare a b)
+    (and (every? #(Character/isDigit %) a) (string? a)) (compare (read-string a) (read-string b))
+    :else (compare a b)))
+
+; compare for maps
 (defn map-sort [a b & keysOfMap]
   (cond
     (and (empty? keysOfMap)
-         (= 0 (compare (get a (first (keys a))) (get b (first (keys b))))))
+         (= 0 (compareForStringNumber (get a (first (keys a))) (get b (first (keys b)))))
+         (= 1 (count (keys a))))
+      0
+    (and (empty? keysOfMap)
+         (not= 0 (compareForStringNumber (get a (first (keys a))) (get b (first (keys b)))))
+         (= 1 (count (keys a))))
+      (compareForStringNumber (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))
+    (and (empty? keysOfMap)
+         (= 0 (compareForStringNumber (get a (first (keys a))) (get b (first (keys b))))))
       (map-sort a b (next (keys a)))
     (and (= 1 (count (first keysOfMap)))
-         (= 0 (compare (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))))
+         (= 0 (compareForStringNumber (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))))
       0
     (and (> (count (first keysOfMap)) 1)
-         (= 0 (compare (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))))
+         (= 0 (compareForStringNumber (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))))
       (map-sort a b (next (first keysOfMap)))
     (empty? keysOfMap)
-      (compare (get a (first (keys a))) (get b (first (keys b))))
+      (compareForStringNumber (get a (first (keys a))) (get b (first (keys b))))
     :else
-      (compare (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))))
+      (compareForStringNumber (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))))
 
-(defn mergestep [l r ord columns]
+(defn mergeStep [l r ord columns]
   (cond (empty? l) r
         (empty? r) l
-        (empty? columns)
-          (if (ord (map-sort (first l) (first r)))
-            (cons (first l) (mergestep (next l) r ord columns))
-            (cons (first r) (mergestep l (next r) ord columns)))
+        (and (empty? columns) (ord (map-sort (first l) (first r))))
+          (cons (first l) (mergeStep (next l) r ord columns))
+        (and (empty? columns) (not (ord (map-sort (first l) (first r)))))
+          (cons (first r) (mergeStep l (next r) ord columns))
+        (ord (map-sort (first l) (first r) columns))
+          (cons (first l) (mergeStep (next l) r ord columns))
         :else
-        (if (ord (map-sort (first l) (first r) columns))
-          (cons (first l) (mergestep (next l) r ord columns))
-          (cons (first r) (mergestep l (next r) ord columns)))))
+          (cons (first r) (mergeStep l (next r) ord columns))))
 
 
-(defn mergesort
-  ([data] (mergesort data neg?))
-  ([data ord] (mergesort data ord []))
+(defn mergeSort
+  ([data] (mergeSort data neg?))
+  ([data ord] (mergeSort data ord []))
   ([data ord columns]
    (if (< (count data) 2)
      data
-     (mergestep
-       (mergesort (first (split-at (/ (count data) 2) data)) ord columns)
-        (mergesort (second (split-at (/ (count data) 2) data)) ord columns)
+     (mergeStep
+       (mergeSort (first (split-at (/ (count data) 2) data)) ord columns)
+        (mergeSort (second (split-at (/ (count data) 2) data)) ord columns)
           ord columns))))
+
+(defn orderBy [table ord columns]
+  (map #(mergeSort % ord columns) table))
 
 (defn whereClause [table words commands]
   (let [whereIndex (.indexOf (map #(str/upper-case %) words) (nth commands 2))]
-  (cond
-    (= -1 whereIndex) table
+    (cond
+      (= -1 whereIndex) table
 
-    (and
+      (and
+        (= 0 (compare (nth words (+ whereIndex 2)) "="))
+        (every? #(Character/isDigit %) (nth words (+ whereIndex 3))))
+      (filter
+        #(= 0 (compare (read-string (get % (keyword (nth words (+ whereIndex 1)))))
+                       (read-string (nth words (+ whereIndex 3))))) table)
+
+      (and
+        (= 0 (compare (nth words (+ whereIndex 2)) ">"))
+        (every? #(Character/isDigit %) (nth words (+ whereIndex 3))))
+      (filter
+        #(< 0 (compare (read-string (get % (keyword (nth words (+ whereIndex 1)))))
+                       (read-string (nth words (+ whereIndex 3))))) table)
+
       (= 0 (compare (nth words (+ whereIndex 2)) "="))
-      (every? #(Character/isDigit %) (nth words (+ whereIndex 3))))
-        (filter
-          #(= 0 (compare (read-string (get % (keyword (nth words (+ whereIndex 1)))))
-                         (read-string (nth words (+ whereIndex 3))))) table)
+      (filter
+        #(= 0 (compare (get % (keyword (nth words (+ whereIndex 1))))
+                       (subs (nth words (+ whereIndex 3))
+                             (+ (str/index-of (nth words (+ whereIndex 3)) "\"") 1)
+                             (str/last-index-of (nth words (+ whereIndex 3)) "\"")))) table)
 
-    (and
       (= 0 (compare (nth words (+ whereIndex 2)) ">"))
-      (every? #(Character/isDigit %) (nth words (+ whereIndex 3))))
-        (filter
-          #(< 0 (compare (read-string (get % (keyword (nth words (+ whereIndex 1)))))
-                         (read-string (nth words (+ whereIndex 3))))) table)
-
-    (= 0 (compare (nth words (+ whereIndex 2)) "="))
-    (filter
-      #(= 0 (compare (get % (keyword (nth words (+ whereIndex 1))))
-                     (subs (nth words (+ whereIndex 3))
-                               (+ (str/index-of (nth words (+ whereIndex 3)) "\"") 1)
-                               (str/last-index-of (nth words (+ whereIndex 3)) "\"")))) table)
-
-    (= 0 (compare (nth words (+ whereIndex 2)) ">"))
-    (filter
-      #(< 0 (compare (get % (keyword (nth words (+ whereIndex 1))))
-                     (subs (nth words (+ whereIndex 3))
-                           (+ (str/index-of (nth words (+ whereIndex 3)) "\"") 1)
-                           (str/last-index-of (nth words (+ whereIndex 3)) "\"")))) table)
-    :else [])))
+      (filter
+        #(< 0 (compare (get % (keyword (nth words (+ whereIndex 1))))
+                       (subs (nth words (+ whereIndex 3))
+                             (+ (str/index-of (nth words (+ whereIndex 3)) "\"") 1)
+                             (str/last-index-of (nth words (+ whereIndex 3)) "\"")))) table)
+      :else [])))
 
 (defn mergeColStep [indexRow indexColumn table & map]
   (if (= 1 (- (count table) indexColumn))
@@ -152,6 +171,17 @@
               (whereClause file words commands))
          columns)))
 
+(defn checkOrder [words commands]
+  (cond
+    (not= -1 (.indexOf (map #(str/upper-case %) words) (nth commands 10))) "pos?"
+    :else "neg?"))
+
+(defn getColumnsOrderBy [words commands]
+  (let [orderWords (nth words
+                        (+ 1
+                           (.indexOf (map #(str/upper-case %) words) (nth commands 5))))]
+    (map #(keyword %) (str/split orderWords #","))))
+
 (defn myDistinct [table columns words commands]
   (if (not= -1 (.indexOf columns "*"))
     (let [file (distinct (mergeColumns table))]
@@ -163,21 +193,34 @@
 
 (defn withDistinct [words commands]
   (cond
+    ; Bad query
     (not= 0 (compare (str/upper-case (nth words 3)) (nth commands 1))) []
+    ; ORDER BY
+    (= 1 (- (.indexOf (map #(str/upper-case %) words) (nth commands 5))
+            (.indexOf (map #(str/upper-case %) words) (nth commands 4))))
+      (orderBy (myDistinct (getMainTable
+                             (str/split (nth words 2) #",") words (nth words 4) commands)
+                           (str/split (nth words 2) #",")
+                           words commands) (resolve (symbol (checkOrder words commands)))
+                                            (getColumnsOrderBy words commands))
     :else
-    (myDistinct (getMainTable
-                  (str/split (nth words 2) #",")
-                    words
-                      (nth words 4)
-                        commands)
+      (myDistinct (getMainTable
+                  (str/split (nth words 2) #",") words (nth words 4) commands)
                   (str/split (nth words 2) #",")
                   words commands)))
 
 (defn noDistinct [words commands]
   (cond
+    ; Bad query
     (not= 0 (compare (str/upper-case (nth words 2)) (nth commands 1))) []
+    ; ORDER BY
+    (= 1 (- (.indexOf (map #(str/upper-case %) words) (nth commands 5))
+               (.indexOf (map #(str/upper-case %) words) (nth commands 4))))
+      (orderBy
+        (getMainTable (str/split (nth words 1) #",") words (nth words 3) commands)
+          (resolve (symbol (checkOrder words commands))) (getColumnsOrderBy words commands))
     :else
-    (getMainTable (str/split (nth words 1) #",") words (nth words 3) commands)))
+      (getMainTable (str/split (nth words 1) #",") words (nth words 3) commands)))
 
 (defn processColumns [words commands]
   (if (not= 0 (compare (str/upper-case (nth words 1)) (nth commands 3)))
@@ -186,6 +229,7 @@
 
 (defn getResult [expr commands]
   (let [words (re-seq #"\"\D+\"|[\S]+" expr)]
+    ; Expression must start with SELECT or select (noSens)
     (if (not= 0 (compare (str/upper-case (first words)) (first commands))) []
       (processColumns words commands))))
 
@@ -193,15 +237,16 @@
   [& args]
   (println "Write your query below this: ")
   (let [input (read-line)
-        commands ["SELECT" "FROM" "WHERE" "DISTINCT"]]
-  (printTable (getResult input commands))))
+        commands ["SELECT" "FROM" "WHERE" "DISTINCT" "ORDER" "BY" "AND" "OR" "NOT" "ASC" "DESC"]
+        result (getResult input commands)]
+  (printTable result)))
 
-(mergeColumns (getResult "SELECT mp_id,assistant_type_id FROM mp-assistants.csv" ["SELECT" "FROM" "WHERE" "DISTINCT"]))
-
-;(mergesort [{:foo 1 :bar 11 :loh 2}
-;            {:foo 1 :bar 11 :loh 4}
-;            {:foo 2 :bar 11 :loh 3}
-;            {:foo 1 :bar 31 :loh 3}] neg? [:loh :foo])
+;(orderBy [[{:foo "1" :bar "11" :loh "2"} {:foo "1" :bar "12" :loh "4"} {:foo "2" :bar "11" :loh "3"} {:foo "1" :bar "31" :loh "3"}]]
+;           (resolve (symbol (checkOrder ["desc"]
+;                ["SELECT" "FROM" "WHERE" "DISTINCT" "ORDER" "BY" "AND" "OR" "NOT" "ASC" "DESC"])))
+;           (getColumnsOrderBy ["by" "foo,loh,bar"]
+;                              ["SELECT" "FROM" "WHERE" "DISTINCT" "ORDER" "BY" "AND" "OR" "NOT" "ASC" "DESC"])
+;           )
 
 ;(distinct  [{:foo 2 :bar 11}
 ;          {:foo 1 :bar 99}
