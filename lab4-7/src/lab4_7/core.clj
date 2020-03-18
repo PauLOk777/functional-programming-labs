@@ -69,23 +69,29 @@
 ; compare for maps
 (defn map-sort [a b & keysOfMap]
   (cond
+    ; if map contains only 1 key and values are equal return 0
     (and (empty? keysOfMap)
          (= 0 (compareForStringNumber (get a (first (keys a))) (get b (first (keys b)))))
          (= 1 (count (keys a))))
       0
+    ; if map contains only 1 key and values have difference return compare
     (and (empty? keysOfMap)
          (not= 0 (compareForStringNumber (get a (first (keys a))) (get b (first (keys b)))))
          (= 1 (count (keys a))))
       (compareForStringNumber (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))
+    ; if map contains more then 1 key and first values of first key are equal return next keys
     (and (empty? keysOfMap)
          (= 0 (compareForStringNumber (get a (first (keys a))) (get b (first (keys b))))))
       (map-sort a b (next (keys a)))
+    ; if last values are equal return 0
     (and (= 1 (count (first keysOfMap)))
          (= 0 (compareForStringNumber (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))))
       0
+    ; if values are equals return next keys
     (and (> (count (first keysOfMap)) 1)
          (= 0 (compareForStringNumber (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))))
       (map-sort a b (next (first keysOfMap)))
+    ; if values have difference return compare
     (empty? keysOfMap)
       (compareForStringNumber (get a (first (keys a))) (get b (first (keys b))))
     :else
@@ -117,6 +123,40 @@
 
 (defn orderBy [table ord columns]
   (map #(mergeSort % ord columns) table))
+
+(defn countFunc [column counter]
+  (cond
+    (and (= "null" (get (first column) (first (keys (first column))))) (= 1 (count column)))
+      (list (hash-map :count counter))
+    (and (not= "null" (get (first column) (first (keys (first column))))) (= 1 (count column)))
+      (list (hash-map :count (+ 1 counter)))
+    (= "null" (get (first column) (first (keys (first column)))))
+      (countFunc (next column) counter)
+    :else
+      (countFunc (next column) (+ 1 counter))))
+
+(defn avgFunc [column sum n]
+  (cond
+    (and (= 1 (count column)) (number? (get (first column) (first (keys (first column))))))
+      (list (hash-map :avg (/ (+ sum (get (first column) (first (keys (first column))))) n)))
+    (number? (get (first column) (first (keys (first column)))))
+      (avgFunc (next column) (+ sum (get (first column) (first (keys (first column))))) n)
+    (= 1 (count column))
+     (list (hash-map :avg (/ (+ sum (read-string (get (first column) (first (keys (first column)))))) n)))
+    :else
+      (avgFunc (next column) (+ sum (read-string (get (first column) (first (keys (first column)))))) n)))
+
+(defn minFunc [column minValue]
+  (cond
+    (and (= 1 (count column))
+         (> 0 (compareForStringNumber (get (first column) (first (keys (first column)))) minValue)))
+      (list (hash-map :min (get (first column) (first (keys (first column))))))
+    (and (= 1 (count column))
+         (<= 0 (compareForStringNumber (get (first column) (first (keys (first column)))) minValue)))
+      (list (hash-map :min minValue))
+    (> 0 (compareForStringNumber (get (first column) (first (keys (first column)))) minValue))
+      (minFunc (next column) (get (first column) (first (keys (first column)))))
+    :else (minFunc (next column) minValue)))
 
 (defn whereClause [table words commands]
   (let [whereIndex (.indexOf (map #(str/upper-case %) words) (nth commands 2))]
@@ -204,6 +244,7 @@
                            words commands) (resolve (symbol (checkOrder words commands)))
                                             (getColumnsOrderBy words commands))
     :else
+    ; default query with DISTINCT and maybe WHERE clauses
       (myDistinct (getMainTable
                   (str/split (nth words 2) #",") words (nth words 4) commands)
                   (str/split (nth words 2) #",")
@@ -220,10 +261,12 @@
         (getMainTable (str/split (nth words 1) #",") words (nth words 3) commands)
           (resolve (symbol (checkOrder words commands))) (getColumnsOrderBy words commands))
     :else
+    ; default query maybe with WHERE clause
       (getMainTable (str/split (nth words 1) #",") words (nth words 3) commands)))
 
 (defn processColumns [words commands]
   (if (not= 0 (compare (str/upper-case (nth words 1)) (nth commands 3)))
+    ; check for DISTINCT clause
     (noDistinct words commands)
     (withDistinct words commands)))
 
@@ -247,10 +290,3 @@
 ;           (getColumnsOrderBy ["by" "foo,loh,bar"]
 ;                              ["SELECT" "FROM" "WHERE" "DISTINCT" "ORDER" "BY" "AND" "OR" "NOT" "ASC" "DESC"])
 ;           )
-
-;(distinct  [{:foo 2 :bar 11}
-;          {:foo 1 :bar 99}
-;          {:foo 2 :bar 55}
-;          {:foo 1 :bar 99}])
-
-;(mergeColumns [[{:foo 1} {:foo 2} {:foo 3}] [{:bar 71} {:bar 77} {:bar 79}] [{:loh -1} {:loh 6} {:loh 1}]])
