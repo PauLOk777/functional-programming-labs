@@ -3,7 +3,8 @@
   (:use [clojure.data.csv])
   (:require [clojure.string :as str]
             [clojure.data.csv :as csv]
-            [clojure.java.io :as io]))
+            [clojure.java.io :as io]
+            [clojure.set :as set]))
 
 (defn readTSV [name]
   (map #(str/split % #"\t")
@@ -124,66 +125,68 @@
 (defn orderBy [table ord columns]
   (map #(mergeSort % ord columns) table))
 
-(defn countFunc [column counter]
-  (cond
-    (and (= "null" (get (first column) (first (keys (first column))))) (= 1 (count column)))
-      (list (hash-map :count counter))
-    (and (not= "null" (get (first column) (first (keys (first column))))) (= 1 (count column)))
-      (list (hash-map :count (+ 1 counter)))
-    (= "null" (get (first column) (first (keys (first column)))))
-      (countFunc (next column) counter)
-    :else
-      (countFunc (next column) (+ 1 counter))))
+(defn countFunc [table]
+  (if (not= 1 (count (keys (first table))))
+    (list (hash-map :count (count table)))
+    (list (hash-map :count (count (filter #(not= "null" (get % (first (keys %)))) table))))))
 
-(defn avgFunc [column sum n]
-  (cond
-    (and (= 1 (count column)) (number? (get (first column) (first (keys (first column))))))
-      (list (hash-map :avg (/ (+ sum (get (first column) (first (keys (first column))))) n)))
-    (number? (get (first column) (first (keys (first column)))))
-      (avgFunc (next column) (+ sum (get (first column) (first (keys (first column))))) n)
-    (= 1 (count column))
-     (list (hash-map :avg (/ (+ sum (read-string (get (first column) (first (keys (first column)))))) n)))
-    :else
-      (avgFunc (next column) (+ sum (read-string (get (first column) (first (keys (first column)))))) n)))
+(defn sumForReduceMap [& body]
+  (let [firstValueOfMap (get (first body) (first (keys (first body))))
+        secondValueOfMap (get (second body) (first (keys (second body))))]
+    (cond
+      (and (number? firstValueOfMap) (number? secondValueOfMap))
+        (merge-with + (first body) (second body))
+      (and (string? firstValueOfMap) (string? secondValueOfMap))
+        (update (first body) (first (keys (first body)))
+                #(+ (read-string %) (read-string secondValueOfMap)))
+      :else
+        (update (first body) (first (keys (first body)))
+                #(+ % (read-string secondValueOfMap))))))
 
-(defn minFunc [column minValue]
-  (cond
-    (and (= 1 (count column))
-         (> 0 (compareForStringNumber (get (first column) (first (keys (first column)))) minValue)))
-      (list (hash-map :min (get (first column) (first (keys (first column))))))
-    (and (= 1 (count column))
-         (<= 0 (compareForStringNumber (get (first column) (first (keys (first column)))) minValue)))
-      (list (hash-map :min minValue))
-    (> 0 (compareForStringNumber (get (first column) (first (keys (first column)))) minValue))
-      (minFunc (next column) (get (first column) (first (keys (first column)))))
-    :else (minFunc (next column) minValue)))
+(defn avgFunc [column]
+  (let [sumOfMaps (reduce sumForReduceMap column)
+        numberOfElementsMap (countFunc column)
+        numberOfElements (get (first numberOfElementsMap) (first (keys (first numberOfElementsMap))))
+        avgValueMap (update sumOfMaps (first (keys sumOfMaps)) / (double numberOfElements))]
+    (list (set/rename-keys avgValueMap {(first (keys avgValueMap)) :avg}))))
+
+(defn minForReduceMap [& body]
+    (let [firstValueOfMap (get (first body) (first (keys (first body))))
+          secondValueOfMap (get (second body) (first (keys (second body))))]
+    (if (and (map? (first body))
+              (>= 0 (compareForStringNumber firstValueOfMap secondValueOfMap)))
+      (first body) (second body))))
+
+(defn minFunc [column]
+  (let [minValueMap (reduce minForReduceMap column)]
+    (list (set/rename-keys minValueMap {(first (keys minValueMap)) :min}))))
 
 (defn whereClause [table words commands]
   (let [whereIndex (.indexOf (map #(str/upper-case %) words) (nth commands 2))]
     (cond
       (= -1 whereIndex) table
-
+      ; operation = for number
       (and
         (= 0 (compare (nth words (+ whereIndex 2)) "="))
         (every? #(Character/isDigit %) (nth words (+ whereIndex 3))))
       (filter
         #(= 0 (compare (read-string (get % (keyword (nth words (+ whereIndex 1)))))
                        (read-string (nth words (+ whereIndex 3))))) table)
-
+      ; operation > for number
       (and
         (= 0 (compare (nth words (+ whereIndex 2)) ">"))
         (every? #(Character/isDigit %) (nth words (+ whereIndex 3))))
       (filter
         #(< 0 (compare (read-string (get % (keyword (nth words (+ whereIndex 1)))))
                        (read-string (nth words (+ whereIndex 3))))) table)
-
+      ; operation = for string
       (= 0 (compare (nth words (+ whereIndex 2)) "="))
       (filter
         #(= 0 (compare (get % (keyword (nth words (+ whereIndex 1))))
                        (subs (nth words (+ whereIndex 3))
                              (+ (str/index-of (nth words (+ whereIndex 3)) "\"") 1)
                              (str/last-index-of (nth words (+ whereIndex 3)) "\"")))) table)
-
+      ; operation > for string
       (= 0 (compare (nth words (+ whereIndex 2)) ">"))
       (filter
         #(< 0 (compare (get % (keyword (nth words (+ whereIndex 1))))
@@ -206,9 +209,29 @@
 
 (defn getMainTable [columns words fileName commands]
   (let [file (getFile fileName)]
-    (map #(if (not= 0 (compare % "*"))
-            (getColumn % (whereClause file words commands))
-              (whereClause file words commands))
+    (map #(cond
+            (= 0 (compare % "*"))
+              (whereClause file words commands)
+            (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
+                 (= 2 (- (.indexOf % "(") (.indexOf % ")")))
+                 (= 0 (compare "*" (subs % (+ 1 (.indexOf % "(")) (.indexOf % ")"))))
+                 (str/starts-with? (str/upper-case %) (nth commands 11)))
+              (countFunc (whereClause file words commands))
+            (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
+                 (str/starts-with? (str/upper-case %) (nth commands 11)))
+              (countFunc (getColumn (subs % (+ 1 (.indexOf % "(")) (.indexOf % ")"))
+                                    (whereClause file words commands)))
+            (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
+                 (str/starts-with? (str/upper-case %) (nth commands 12)))
+              (let [col (getColumn (subs % (+ 1 (.indexOf % "(")) (.indexOf % ")"))
+                                   (whereClause file words commands))]
+                (avgFunc col))
+            (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
+                 (str/starts-with? (str/upper-case %) (nth commands 13)))
+              (let [col (getColumn (subs % (+ 1 (.indexOf % "(")) (.indexOf % ")"))
+                                 (whereClause file words commands))]
+                (minFunc col))
+            :else (getColumn % (whereClause file words commands)))
          columns)))
 
 (defn checkOrder [words commands]
@@ -280,7 +303,8 @@
   [& args]
   (println "Write your query below this: ")
   (let [input (read-line)
-        commands ["SELECT" "FROM" "WHERE" "DISTINCT" "ORDER" "BY" "AND" "OR" "NOT" "ASC" "DESC"]
+        commands ["SELECT" "FROM" "WHERE" "DISTINCT"
+                  "ORDER" "BY" "AND" "OR" "NOT" "ASC" "DESC" "COUNT" "AVG" "MIN"]
         result (getResult input commands)]
   (printTable result)))
 
