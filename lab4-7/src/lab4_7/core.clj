@@ -132,7 +132,7 @@
 (defn countFunc [table]
   (if (not= 1 (count (keys (first table))))
     (list (hash-map :count (count table)))
-    (list (hash-map :count (count (filter #(not= "null" (get % (first (keys %)))) table))))))
+    (list (hash-map :count (count (filter #(not= "" (get % (first (keys %)))) table))))))
 
 (defn sumForReduceMap [& body]
   (let [firstValueOfMap (get (first body) (first (keys (first body))))
@@ -259,8 +259,6 @@
         lastIndexOfOr (getLastIndex (map #(str/upper-case %) conditions) (nth commands 7))
         numberOfAnd (numberOfRepeated (map #(str/upper-case %) conditions) (nth commands 6))
         numberOfOr (numberOfRepeated (map #(str/upper-case %) conditions) (nth commands 7))]
-    (println lastIndexOfAnd)
-    (println conditions)
     (cond
       (= 3 (count conditions)) (checkTruth row conditions)
       (= 4 (count conditions))
@@ -296,7 +294,8 @@
 
 (defn whereClause [table words commands]
   (let [conditions (parseConditions words commands)]
-    (filter #(checkAllConditions % conditions commands) table)))
+    (if (not= -1 (.indexOf (map #(str/upper-case %) words) (nth commands 2)))
+    (filter #(checkAllConditions % conditions commands) table) table)))
 
 (defn mergeColStep [indexRow indexColumn table & map]
   (if (= 1 (- (count table) indexColumn))
@@ -311,30 +310,26 @@
   (map #(select-keys % [(keyword columnName)]) file))
 
 (defn getMainTable [columns words fileName commands]
-  (let [file (getFile fileName)]
+  (let [file (getFile fileName)
+        filteredFile (whereClause file words commands)]
     (map #(cond
             (= 0 (compare % "*"))
-            (whereClause file words commands)
+              filteredFile
             (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
                  (= 2 (- (.indexOf % "(") (.indexOf % ")")))
                  (= 0 (compare "*" (subs % (+ 1 (.indexOf % "(")) (.indexOf % ")"))))
                  (str/starts-with? (str/upper-case %) (nth commands 11)))
-            (countFunc (whereClause file words commands))
+              (countFunc filteredFile)
             (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
                  (str/starts-with? (str/upper-case %) (nth commands 11)))
-            (countFunc (getColumn (subs % (+ 1 (.indexOf % "(")) (.indexOf % ")"))
-                                  (whereClause file words commands)))
+              (countFunc (getColumn (subs % (+ 1 (.indexOf % "(")) (.indexOf % ")")) filteredFile))
             (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
                  (str/starts-with? (str/upper-case %) (nth commands 12)))
-            (let [col (getColumn (subs % (+ 1 (.indexOf % "(")) (.indexOf % ")"))
-                                 (whereClause file words commands))]
-              (avgFunc col))
+              (avgFunc (getColumn (subs % (+ 1 (.indexOf % "(")) (.indexOf % ")")) filteredFile))
             (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
                  (str/starts-with? (str/upper-case %) (nth commands 13)))
-            (let [col (getColumn (subs % (+ 1 (.indexOf % "(")) (.indexOf % ")"))
-                                 (whereClause file words commands))]
-              (minFunc col))
-            :else (getColumn % (whereClause file words commands)))
+              (minFunc (getColumn (subs % (+ 1 (.indexOf % "(")) (.indexOf % ")")) filteredFile))
+            :else (getColumn % filteredFile))
          columns)))
 
 (defn checkOrder [words commands]
