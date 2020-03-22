@@ -306,12 +306,50 @@
   (for [i (range (count (first table)))]
     (mergeColStep i 0 table)))
 
+(defn leftJoin [currentTable forJoiningTable condition]
+  currentTable)
+
+(defn fullOuterJoin [currentTable forJoiningTable condition]
+  currentTable)
+
+(defn innerJoin [currentTable forJoiningTable condition]
+  forJoiningTable)
+
+(defn joinTables [table words commands]
+  (let [firstJoinIndex (.indexOf (map #(str/upper-case %) words) (nth commands 18))]
+    (cond
+      (= -1 firstJoinIndex)
+        table
+      (and (= 0 (compare (str/upper-case (nth words (- firstJoinIndex 1))) (nth commands 14)))
+           (= 0 (compare (str/upper-case (nth words (+ firstJoinIndex 2))) (nth commands 19))))
+        (joinTables (innerJoin
+                      table (getFile (nth words (+ 1 firstJoinIndex)))
+                      (subvec (vec words) (+ 3 firstJoinIndex) (+ 6 firstJoinIndex)))
+                    (subvec (vec words) (+ 6 firstJoinIndex) (count words)) commands)
+      (and (= 0 (compare (str/upper-case (nth words (- firstJoinIndex 2))) (nth commands 15)))
+           (= 0 (compare (str/upper-case (nth words (- firstJoinIndex 1))) (nth commands 16)))
+           (= 0 (compare (str/upper-case (nth words (+ firstJoinIndex 2))) (nth commands 19))))
+        (joinTables (fullOuterJoin
+                      table (getFile (nth words (+ 1 firstJoinIndex)))
+                      (subvec (vec words) (+ 3 firstJoinIndex) (+ 6 firstJoinIndex)))
+                    (subvec (vec words) (+ 6 firstJoinIndex) (count words)) commands)
+      (and (= 0 (compare (str/upper-case (nth words (- firstJoinIndex 1))) (nth commands 17)))
+           (= 0 (compare (str/upper-case (nth words (+ firstJoinIndex 2))) (nth commands 19))))
+      (joinTables (leftJoin
+                    table (getFile (nth words (+ 1 firstJoinIndex)))
+                    (subvec (vec words) (+ 3 firstJoinIndex) (+ 6 firstJoinIndex)))
+                  (subvec (vec words) (+ 6 firstJoinIndex) (count words)) commands))))
+
+(defn checkForJoin [words commands]
+  (let [firstFile (getFile (nth words (+ 1 (.indexOf (map #(str/upper-case %) words) (nth commands 1)))))]
+  (if (= -1 (.indexOf (map #(str/upper-case %) words) (nth commands 18)))
+    firstFile (joinTables firstFile words commands))))
+
 (defn getColumn [columnName file]
   (map #(select-keys % [(keyword columnName)]) file))
 
-(defn getMainTable [columns words fileName commands]
-  (let [file (getFile fileName)
-        filteredFile (whereClause file words commands)]
+(defn getMainTable [columns words commands]
+  (let [filteredFile (whereClause (checkForJoin words commands) words commands)]
     (map #(cond
             (= 0 (compare % "*"))
               filteredFile
@@ -360,14 +398,14 @@
     (= 1 (- (.indexOf (map #(str/upper-case %) words) (nth commands 5))
             (.indexOf (map #(str/upper-case %) words) (nth commands 4))))
     (orderBy (myDistinct (getMainTable
-                           (str/split (nth words 2) #",") words (nth words 4) commands)
+                           (str/split (nth words 2) #",") words commands)
                          (str/split (nth words 2) #",")
                          words commands) (resolve (symbol (checkOrder words commands)))
              (getColumnsOrderBy words commands))
     :else
     ; default query with DISTINCT and maybe WHERE clauses
     (myDistinct (getMainTable
-                  (str/split (nth words 2) #",") words (nth words 4) commands)
+                  (str/split (nth words 2) #",") words commands)
                 (str/split (nth words 2) #",")
                 words commands)))
 
@@ -379,11 +417,11 @@
     (= 1 (- (.indexOf (map #(str/upper-case %) words) (nth commands 5))
             (.indexOf (map #(str/upper-case %) words) (nth commands 4))))
     (orderBy
-      (getMainTable (str/split (nth words 1) #",") words (nth words 3) commands)
+      (getMainTable (str/split (nth words 1) #",") words commands)
       (resolve (symbol (checkOrder words commands))) (getColumnsOrderBy words commands))
     :else
     ; default query maybe with WHERE clause
-    (getMainTable (str/split (nth words 1) #",") words (nth words 3) commands)))
+    (getMainTable (str/split (nth words 1) #",") words commands)))
 
 (defn processColumns [words commands]
   (if (not= 0 (compare (str/upper-case (nth words 1)) (nth commands 3)))
@@ -402,6 +440,7 @@
   (println "Write your query below this: ")
   (let [input (read-line)
         commands ["SELECT" "FROM" "WHERE" "DISTINCT"
-                  "ORDER" "BY" "AND" "OR" "NOT" "ASC" "DESC" "COUNT" "AVG" "MIN"]
+                  "ORDER" "BY" "AND" "OR" "NOT" "ASC" "DESC" "COUNT" "AVG" "MIN"
+                  "INNER" "FULL" "OUTER" "LEFT" "JOIN" "ON"]
         result (getResult input commands)]
     (printTable result)))
