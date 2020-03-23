@@ -306,17 +306,55 @@
   (for [i (range (count (first table)))]
     (mergeColStep i 0 table)))
 
-(defn leftJoin [currentTable forJoiningTable condition]
+(defn getTableNameJoinClause [str]
+  (if (and (= 0 (.indexOf str "[")) (not= -1 (.indexOf str "]")))
+    (subs str 1 (.indexOf str "]"))
+    (nth (str/split str #"\.") 0)))
+
+(defn leftJoin [currentTable forJoiningTable condition forJoiningTableName]
   currentTable)
 
-(defn fullOuterJoin [currentTable forJoiningTable condition]
+(defn fullOuterJoin [currentTable forJoiningTable condition forJoiningTableName]
   currentTable)
 
-(defn innerJoin [currentTable forJoiningTable condition]
-  forJoiningTable)
+(defn innerJoinConnect [resultTable currentTable forJoiningTable
+                        currentTableKeyword forJoiningTableKeyword & indexOfIter]
+  (cond
+    (empty? indexOfIter)
+      (innerJoinConnect
+        (map #(merge (nth currentTable 0) %)
+             (filter #(= (get (nth currentTable 0) (keyword currentTableKeyword))
+                         (get % (keyword forJoiningTableKeyword))) forJoiningTable))
+        currentTable forJoiningTable currentTableKeyword forJoiningTableKeyword 1)
+    (= (first indexOfIter) (- (count currentTable) 1))
+      (concat
+        resultTable
+        (map #(merge (nth currentTable (first indexOfIter)) %)
+             (filter #(= (get (nth currentTable (first indexOfIter)) (keyword currentTableKeyword))
+                         (get % (keyword forJoiningTableKeyword))) forJoiningTable)))
+    :else
+      (innerJoinConnect
+        (concat
+          resultTable
+          (map #(merge (nth currentTable (first indexOfIter)) %)
+               (filter #(= (get (nth currentTable (first indexOfIter)) (keyword currentTableKeyword))
+                           (get % (keyword forJoiningTableKeyword))) forJoiningTable)))
+        currentTable forJoiningTable currentTableKeyword
+        forJoiningTableKeyword (+ 1 (first indexOfIter)))))
+
+(defn innerJoin [currentTable forJoiningTable condition forJoiningTableName]
+  (println forJoiningTable)
+  (if (= (getTableNameJoinClause (first condition)) forJoiningTableName)
+    (innerJoinConnect '() currentTable forJoiningTable
+                      (last (str/split (last condition) #"\."))
+                      (last (str/split (first condition) #"\.")))
+    (innerJoinConnect '() currentTable forJoiningTable
+                      (last (str/split (first condition) #"\."))
+                      (last (str/split (last condition) #"\.")))))
 
 (defn joinTables [table words commands]
   (let [firstJoinIndex (.indexOf (map #(str/upper-case %) words) (nth commands 18))]
+    (println words)
     (cond
       (= -1 firstJoinIndex)
         table
@@ -324,20 +362,23 @@
            (= 0 (compare (str/upper-case (nth words (+ firstJoinIndex 2))) (nth commands 19))))
         (joinTables (innerJoin
                       table (getFile (nth words (+ 1 firstJoinIndex)))
-                      (subvec (vec words) (+ 3 firstJoinIndex) (+ 6 firstJoinIndex)))
+                      (subvec (vec words) (+ 3 firstJoinIndex) (+ 6 firstJoinIndex))
+                      (nth words (+ 1 firstJoinIndex)))
                     (subvec (vec words) (+ 6 firstJoinIndex) (count words)) commands)
       (and (= 0 (compare (str/upper-case (nth words (- firstJoinIndex 2))) (nth commands 15)))
            (= 0 (compare (str/upper-case (nth words (- firstJoinIndex 1))) (nth commands 16)))
            (= 0 (compare (str/upper-case (nth words (+ firstJoinIndex 2))) (nth commands 19))))
         (joinTables (fullOuterJoin
                       table (getFile (nth words (+ 1 firstJoinIndex)))
-                      (subvec (vec words) (+ 3 firstJoinIndex) (+ 6 firstJoinIndex)))
+                      (subvec (vec words) (+ 3 firstJoinIndex) (+ 6 firstJoinIndex))
+                      (nth words (+ 1 firstJoinIndex)))
                     (subvec (vec words) (+ 6 firstJoinIndex) (count words)) commands)
       (and (= 0 (compare (str/upper-case (nth words (- firstJoinIndex 1))) (nth commands 17)))
            (= 0 (compare (str/upper-case (nth words (+ firstJoinIndex 2))) (nth commands 19))))
       (joinTables (leftJoin
                     table (getFile (nth words (+ 1 firstJoinIndex)))
-                    (subvec (vec words) (+ 3 firstJoinIndex) (+ 6 firstJoinIndex)))
+                    (subvec (vec words) (+ 3 firstJoinIndex) (+ 6 firstJoinIndex))
+                    (nth words (+ 1 firstJoinIndex)))
                   (subvec (vec words) (+ 6 firstJoinIndex) (count words)) commands))))
 
 (defn checkForJoin [words commands]
