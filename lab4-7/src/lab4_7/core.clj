@@ -311,75 +311,210 @@
     (subs str 1 (.indexOf str "]"))
     (nth (str/split str #"\.") 0)))
 
-(defn leftJoin [currentTable forJoiningTable condition forJoiningTableName]
-  currentTable)
+(defn pasteEmptyAndMakeMap [map]
+  (zipmap (keys map) (take (count map) (repeat ""))))
 
-(defn fullOuterJoin [currentTable forJoiningTable condition forJoiningTableName]
-  currentTable)
+(defn getAcceptableElements [currentTable forJoiningTable
+                             currentTableKeyword forJoiningTableKeyword indexOfIter]
+  (filter #(= (get (nth currentTable indexOfIter) (keyword currentTableKeyword))
+              (get % (keyword forJoiningTableKeyword))) forJoiningTable))
 
-(defn innerJoinConnect [resultTable currentTable forJoiningTable
-                        currentTableKeyword forJoiningTableKeyword & indexOfIter]
-  (cond
-    (empty? indexOfIter)
-      (innerJoinConnect
-        (map #(merge (nth currentTable 0) %)
-             (filter #(= (get (nth currentTable 0) (keyword currentTableKeyword))
-                         (get % (keyword forJoiningTableKeyword))) forJoiningTable))
-        currentTable forJoiningTable currentTableKeyword forJoiningTableKeyword 1)
-    (= (first indexOfIter) (- (count currentTable) 1))
-      (concat
-        resultTable
-        (map #(merge (nth currentTable (first indexOfIter)) %)
-             (filter #(= (get (nth currentTable (first indexOfIter)) (keyword currentTableKeyword))
-                         (get % (keyword forJoiningTableKeyword))) forJoiningTable)))
-    :else
-      (innerJoinConnect
+(defn leftJoin [resultTable currentTable forJoiningTable
+                currentTableKeyword forJoiningTableKeyword & indexOfIter]
+  (let [acceptableElements (if (empty? indexOfIter)
+                             (getAcceptableElements currentTable forJoiningTable currentTableKeyword
+                                                    forJoiningTableKeyword 0)
+                             (getAcceptableElements currentTable forJoiningTable currentTableKeyword
+                                                    forJoiningTableKeyword (first indexOfIter)))
+        emptyMapForJoiningKeys (assoc (pasteEmptyAndMakeMap (first forJoiningTable))
+                                 (keyword forJoiningTableKeyword)
+                                 (get (nth currentTable (if (empty? indexOfIter)
+                                                          0 (first indexOfIter))) (keyword currentTableKeyword)))]
+    (println resultTable)
+    (cond
+       (empty? indexOfIter)
+       (leftJoin
+         (if (empty? acceptableElements)
+           (list (merge (nth currentTable 0) emptyMapForJoiningKeys))
+           (map #(merge (nth currentTable 0) %) acceptableElements))
+         currentTable forJoiningTable currentTableKeyword forJoiningTableKeyword 1)
+       (= (first indexOfIter) (- (count currentTable) 1))
         (concat
           resultTable
-          (map #(merge (nth currentTable (first indexOfIter)) %)
-               (filter #(= (get (nth currentTable (first indexOfIter)) (keyword currentTableKeyword))
-                           (get % (keyword forJoiningTableKeyword))) forJoiningTable)))
-        currentTable forJoiningTable currentTableKeyword
-        forJoiningTableKeyword (+ 1 (first indexOfIter)))))
+          (if (empty? acceptableElements)
+            (list (merge (nth currentTable (first indexOfIter)) emptyMapForJoiningKeys))
+            (map #(merge (nth currentTable (first indexOfIter)) %) acceptableElements)))
+       :else
+        (leftJoin
+          (concat
+             resultTable
+             (if (empty? acceptableElements)
+               (list (merge (nth currentTable (first indexOfIter)) emptyMapForJoiningKeys))
+               (map #(merge (nth currentTable (first indexOfIter)) %) acceptableElements)))
+          currentTable forJoiningTable currentTableKeyword
+          forJoiningTableKeyword (+ 1 (first indexOfIter))))))
 
-(defn innerJoin [currentTable forJoiningTable condition forJoiningTableName]
-  (println forJoiningTable)
-  (if (= (getTableNameJoinClause (first condition)) forJoiningTableName)
-    (innerJoinConnect '() currentTable forJoiningTable
-                      (last (str/split (last condition) #"\."))
-                      (last (str/split (first condition) #"\.")))
-    (innerJoinConnect '() currentTable forJoiningTable
-                      (last (str/split (first condition) #"\."))
-                      (last (str/split (last condition) #"\.")))))
+(defn fullOuterJoin [resultTable currentTable forJoiningTable
+                     currentTableKeyword forJoiningTableKeyword & indexOfIterListOfUsed]
+  (let [acceptableElements (if (empty? indexOfIterListOfUsed)
+                             (getAcceptableElements currentTable forJoiningTable currentTableKeyword
+                                                    forJoiningTableKeyword 0)
+                             (getAcceptableElements currentTable forJoiningTable currentTableKeyword
+                                                    forJoiningTableKeyword (first indexOfIterListOfUsed)))
+        emptyMapForJoiningKeys (pasteEmptyAndMakeMap (first forJoiningTable))
+        emptyMapCurrentKeys (pasteEmptyAndMakeMap (first currentTable))]
+    (cond
+      (empty? indexOfIterListOfUsed)
+        (fullOuterJoin
+          (if (empty? acceptableElements)
+            (list (merge (nth currentTable 0) emptyMapForJoiningKeys))
+            (map #(merge (nth currentTable 0) %) acceptableElements))
+          currentTable forJoiningTable currentTableKeyword forJoiningTableKeyword 1 acceptableElements)
+      (= (first indexOfIterListOfUsed) (- (count currentTable) 1))
+        (concat
+          resultTable
+          (if (empty? acceptableElements)
+            (list (merge (nth currentTable (first indexOfIterListOfUsed)) emptyMapForJoiningKeys))
+            (map #(merge (nth currentTable (first indexOfIterListOfUsed)) %) acceptableElements))
+          (map #(merge emptyMapCurrentKeys %)
+               (into '() (set/difference (set forJoiningTable) (set (second indexOfIterListOfUsed))))))
+        :else
+          (fullOuterJoin
+            (concat
+              resultTable
+              (if (empty? acceptableElements)
+                (list (merge (nth currentTable (first indexOfIterListOfUsed)) emptyMapForJoiningKeys))
+                (map #(merge (nth currentTable (first indexOfIterListOfUsed)) %) acceptableElements)))
+            currentTable forJoiningTable currentTableKeyword
+            forJoiningTableKeyword (inc (first indexOfIterListOfUsed))
+            (concat (second indexOfIterListOfUsed) acceptableElements)))))
+
+(defn innerJoin [resultTable currentTable forJoiningTable
+                        currentTableKeyword forJoiningTableKeyword & indexOfIter]
+  (let [acceptableElements (if (empty? indexOfIter)
+                             (getAcceptableElements currentTable forJoiningTable currentTableKeyword
+                                                    forJoiningTableKeyword 0)
+                             (getAcceptableElements currentTable forJoiningTable currentTableKeyword
+                                                    forJoiningTableKeyword (first indexOfIter)))]
+    (cond
+      (empty? indexOfIter)
+        (innerJoin
+          (map #(merge (nth currentTable 0) %) acceptableElements)
+          currentTable forJoiningTable currentTableKeyword forJoiningTableKeyword 1)
+      (= (first indexOfIter) (- (count currentTable) 1))
+        (concat
+          resultTable
+          (map #(merge (nth currentTable (first indexOfIter)) %) acceptableElements))
+      :else
+        (innerJoin
+          (concat
+            resultTable
+            (map #(merge (nth currentTable (first indexOfIter)) %) acceptableElements))
+          currentTable forJoiningTable currentTableKeyword
+          forJoiningTableKeyword (+ 1 (first indexOfIter))))))
+
+(defn changeJoin [currentTable forJoiningTable condition forJoiningTableName typeJoin]
+  (let [textInParenthesesFirst (if (and (not= -1 (.indexOf (first condition) "("))
+                                        (not= -1 (.indexOf (first condition) ")"))
+                                        (> (.indexOf (first condition) ")")
+                                           (.indexOf (first condition) "(")))
+                                 (subs (first condition)
+                                       (inc (str/last-index-of
+                                              (subs (first condition)
+                                                    0 (.indexOf (first condition) "(")) "."))
+                                       (inc (.indexOf (first condition) ")"))) [])
+        textInParenthesesLast (if (and (not= -1 (.indexOf (last condition) "("))
+                                       (not= -1 (.indexOf (last condition) ")"))
+                                       (> (.indexOf (last condition) ")")
+                                          (.indexOf (last condition) "(")))
+                                (subs (last condition)
+                                      (inc (str/last-index-of
+                                             (subs (last condition)
+                                                   0 (.indexOf (last condition) "(")) "."))
+                                      (inc (.indexOf (last condition) ")"))) [])]
+    (if (= (getTableNameJoinClause (first condition)) forJoiningTableName)
+      ((resolve (symbol typeJoin)) '() currentTable forJoiningTable
+       (last (str/split (last condition) #"\."))
+       (if (empty? textInParenthesesFirst)
+         (last (str/split (first condition) #"\.")) textInParenthesesFirst))
+      ((resolve (symbol typeJoin)) '() currentTable forJoiningTable
+       (last (str/split (first condition) #"\."))
+       (if (empty? textInParenthesesLast)
+         (last (str/split (last condition) #"\.")) textInParenthesesLast)))))
+
+(defn renameMapKeys [table sameKeys tableName]
+  (map #(set/rename-keys
+          % (zipmap sameKeys
+                    (map (fn [currKey]
+                           (keyword (subs (str currKey "(" tableName ")") 1))) sameKeys))) table))
 
 (defn joinTables [table words commands]
   (let [firstJoinIndex (.indexOf (map #(str/upper-case %) words) (nth commands 18))]
-    (println words)
     (cond
       (= -1 firstJoinIndex)
         table
       (and (= 0 (compare (str/upper-case (nth words (- firstJoinIndex 1))) (nth commands 14)))
            (= 0 (compare (str/upper-case (nth words (+ firstJoinIndex 2))) (nth commands 19))))
-        (joinTables (innerJoin
-                      table (getFile (nth words (+ 1 firstJoinIndex)))
+      (let [forJoiningTable (getFile (nth words (+ 1 firstJoinIndex)))
+            sameConditionKeys (= (last (str/split (nth words (+ 3 firstJoinIndex)) #"\."))
+                                 (last (str/split (nth words (+ 5 firstJoinIndex)) #"\.")))
+            sameKeys (vec
+                       (set/difference
+                         (set/intersection
+                           (set (keys (first table)))
+                           (set (keys (first forJoiningTable))))
+                         (if sameConditionKeys
+                           (set (conj [] (keyword (last (str/split (nth words (+ 3 firstJoinIndex)) #"\.")))))
+                           #{})))
+            correctKeysJoiningTable (renameMapKeys forJoiningTable sameKeys (nth words (+ 1 firstJoinIndex)))]
+        (joinTables (changeJoin
+                      table correctKeysJoiningTable
                       (subvec (vec words) (+ 3 firstJoinIndex) (+ 6 firstJoinIndex))
-                      (nth words (+ 1 firstJoinIndex)))
-                    (subvec (vec words) (+ 6 firstJoinIndex) (count words)) commands)
+                      (nth words (+ 1 firstJoinIndex)) "innerJoin")
+                    (subvec (vec words) (+ 6 firstJoinIndex) (count words)) commands))
       (and (= 0 (compare (str/upper-case (nth words (- firstJoinIndex 2))) (nth commands 15)))
            (= 0 (compare (str/upper-case (nth words (- firstJoinIndex 1))) (nth commands 16)))
            (= 0 (compare (str/upper-case (nth words (+ firstJoinIndex 2))) (nth commands 19))))
-        (joinTables (fullOuterJoin
-                      table (getFile (nth words (+ 1 firstJoinIndex)))
-                      (subvec (vec words) (+ 3 firstJoinIndex) (+ 6 firstJoinIndex))
-                      (nth words (+ 1 firstJoinIndex)))
-                    (subvec (vec words) (+ 6 firstJoinIndex) (count words)) commands)
+        (let [forJoiningTable (getFile (nth words (+ 1 firstJoinIndex)))
+              sameConditionKeys (= (last (str/split (nth words (+ 3 firstJoinIndex)) #"\."))
+                                   (last (str/split (nth words (+ 5 firstJoinIndex)) #"\.")))
+              sameKeys (vec
+                         (set/intersection
+                           (set (keys (first table)))
+                           (set (keys (first forJoiningTable)))))
+              correctKeysJoiningTable (renameMapKeys forJoiningTable sameKeys (nth words (+ 1 firstJoinIndex)))]
+          (joinTables (changeJoin
+                        table correctKeysJoiningTable
+                        (if sameConditionKeys
+                          (subvec (vec (map #(if (or (= (nth words (+ 3 firstJoinIndex)) %)
+                                                          (= (nth words (+ 5 firstJoinIndex)) %))
+                                                      (if (= (getTableNameJoinClause %)
+                                                             (nth words (+ 1 firstJoinIndex)))
+                                                        (str % "(" (nth words (+ 1 firstJoinIndex)) ")") %) %) words))
+                                  (+ 3 firstJoinIndex)
+                                  (+ 6 firstJoinIndex))
+                          (subvec (vec words) (+ 3 firstJoinIndex) (+ 6 firstJoinIndex)))
+                        (nth words (+ 1 firstJoinIndex)) "fullOuterJoin")
+                      (subvec (vec words) (+ 6 firstJoinIndex) (count words)) commands))
       (and (= 0 (compare (str/upper-case (nth words (- firstJoinIndex 1))) (nth commands 17)))
            (= 0 (compare (str/upper-case (nth words (+ firstJoinIndex 2))) (nth commands 19))))
-      (joinTables (leftJoin
-                    table (getFile (nth words (+ 1 firstJoinIndex)))
-                    (subvec (vec words) (+ 3 firstJoinIndex) (+ 6 firstJoinIndex))
-                    (nth words (+ 1 firstJoinIndex)))
-                  (subvec (vec words) (+ 6 firstJoinIndex) (count words)) commands))))
+      (let [forJoiningTable (getFile (nth words (+ 1 firstJoinIndex)))
+            sameConditionKeys (= (last (str/split (nth words (+ 3 firstJoinIndex)) #"\."))
+                                 (last (str/split (nth words (+ 5 firstJoinIndex)) #"\.")))
+            sameKeys (vec
+                       (set/difference
+                         (set/intersection
+                           (set (keys (first table)))
+                           (set (keys (first forJoiningTable))))
+                         (if sameConditionKeys
+                           (set (conj [] (keyword (last (str/split (nth words (+ 3 firstJoinIndex)) #"\.")))))
+                           #{})))
+            correctKeysJoiningTable (renameMapKeys forJoiningTable sameKeys (nth words (+ 1 firstJoinIndex)))]
+        (joinTables (changeJoin
+                      table correctKeysJoiningTable
+                      (subvec (vec words) (+ 3 firstJoinIndex) (+ 6 firstJoinIndex))
+                      (nth words (+ 1 firstJoinIndex)) "leftJoin")
+                    (subvec (vec words) (+ 6 firstJoinIndex) (count words)) commands)))))
 
 (defn checkForJoin [words commands]
   (let [firstFile (getFile (nth words (+ 1 (.indexOf (map #(str/upper-case %) words) (nth commands 1)))))]
@@ -485,3 +620,5 @@
                   "INNER" "FULL" "OUTER" "LEFT" "JOIN" "ON"]
         result (getResult input commands)]
     (printTable result)))
+
+(apply str (reverse "1234"))
