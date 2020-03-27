@@ -62,14 +62,27 @@
     (makeTableTSV name)))
 
 (defn compareForStringNumber [a b]
-  (cond
-    (number? a) (compare a b)
-    (and (every? #(Character/isDigit %) a) (string? a)) (compare (read-string a) (read-string b))
-    :else (compare a b)))
+  (let [alterA (str a)
+        alterB (str b)]
+    (cond
+      (and (every? #(Character/isDigit %) alterA) (string? alterA))
+        (compare (read-string alterA) (read-string alterB))
+      :else (compare alterA alterB))))
+
+(defn containsForMap [m1 m2]
+  (and (every? (set (keys m1)) (keys m2))
+       (every? #(= (m1 %)(m2 %)) (keys m2))))
 
 (defn getLastIndex [coll word]
   (if (not= -1 (.indexOf (reverse coll) word))
     (- (count coll) (.indexOf (reverse coll) word) 1) -1))
+
+(defn getColumn [columnName file]
+  (map #(select-keys % [(keyword columnName)]) file))
+
+(defn myDistinct [table words commands]
+  (if (= -1 (.indexOf (map #(str/upper-case %) words) (nth commands 3)))
+    (list table) (list (distinct table))))
 
 ; compare for maps
 (defn map-sort [a b & keysOfMap]
@@ -126,8 +139,19 @@
        (mergeSort (second (split-at (/ (count data) 2) data)) ord columns)
        ord columns))))
 
-(defn orderBy [table ord columns]
-  (map #(mergeSort % ord columns) table))
+(defn checkOrder [words commands]
+  (cond
+    (not= -1 (.indexOf (map #(str/upper-case %) words) (nth commands 10))) "pos?"
+    :else "neg?"))
+
+(defn getColumnsOrderBy [words indexOfBy]
+    (map #(keyword %) (str/split (nth words (inc indexOfBy)) #",")))
+
+(defn orderBy [table words commands]
+  (let [indexOfOrder (.indexOf (map #(str/upper-case %) words) (nth commands 4))]
+    (if (= -1 indexOfOrder)
+     table (mergeSort table (resolve (symbol (checkOrder words commands)))
+                            (getColumnsOrderBy words (inc indexOfOrder))))))
 
 (defn countFunc [table]
   (if (not= 1 (count (keys (first table))))
@@ -139,13 +163,13 @@
         secondValueOfMap (get (second body) (first (keys (second body))))]
     (cond
       (and (number? firstValueOfMap) (number? secondValueOfMap))
-      (merge-with + (first body) (second body))
+        (merge-with + (first body) (second body))
       (and (string? firstValueOfMap) (string? secondValueOfMap))
-      (update (first body) (first (keys (first body)))
-              #(+ (read-string %) (read-string secondValueOfMap)))
+       (update (first body) (first (keys (first body)))
+               #(+ (read-string %) (read-string secondValueOfMap)))
       :else
-      (update (first body) (first (keys (first body)))
-              #(+ % (read-string secondValueOfMap))))))
+        (update (first body) (first (keys (first body)))
+                #(+ % (read-string secondValueOfMap))))))
 
 (defn avgFunc [column]
   (let [sumOfMaps (reduce sumForReduceMap column)
@@ -330,7 +354,6 @@
                                  (keyword forJoiningTableKeyword)
                                  (get (nth currentTable (if (empty? indexOfIter)
                                                           0 (first indexOfIter))) (keyword currentTableKeyword)))]
-    (println resultTable)
     (cond
        (empty? indexOfIter)
        (leftJoin
@@ -516,97 +539,236 @@
                       (nth words (+ 1 firstJoinIndex)) "leftJoin")
                     (subvec (vec words) (+ 6 firstJoinIndex) (count words)) commands)))))
 
-(defn checkForJoin [words commands]
-  (let [firstFile (getFile (nth words (+ 1 (.indexOf (map #(str/upper-case %) words) (nth commands 1)))))]
+(defn checkForJoin [file words commands]
   (if (= -1 (.indexOf (map #(str/upper-case %) words) (nth commands 18)))
-    firstFile (joinTables firstFile words commands))))
+    file (joinTables file words commands)))
 
-(defn getColumn [columnName file]
-  (map #(select-keys % [(keyword columnName)]) file))
+(defn conditionHaving [havingIndex words]
+  (if (= -1 havingIndex) [] (if (> (+ havingIndex 4) (count words))
+                              [] (subvec (vec words) (+ 1 havingIndex) (+ 4 havingIndex)))))
 
-(defn getMainTable [columns words commands]
-  (let [filteredFile (whereClause (checkForJoin words commands) words commands)]
-    (map #(cond
-            (= 0 (compare % "*"))
-              filteredFile
-            (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
-                 (= 2 (- (.indexOf % "(") (.indexOf % ")")))
-                 (= 0 (compare "*" (subs % (+ 1 (.indexOf % "(")) (.indexOf % ")"))))
-                 (str/starts-with? (str/upper-case %) (nth commands 11)))
-              (countFunc filteredFile)
-            (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
-                 (str/starts-with? (str/upper-case %) (nth commands 11)))
-              (countFunc (getColumn (subs % (+ 1 (.indexOf % "(")) (.indexOf % ")")) filteredFile))
-            (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
-                 (str/starts-with? (str/upper-case %) (nth commands 12)))
-              (avgFunc (getColumn (subs % (+ 1 (.indexOf % "(")) (.indexOf % ")")) filteredFile))
-            (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
-                 (str/starts-with? (str/upper-case %) (nth commands 13)))
-              (minFunc (getColumn (subs % (+ 1 (.indexOf % "(")) (.indexOf % ")")) filteredFile))
-            :else (getColumn % filteredFile))
+(defn checkConditionForCurrRow [tableContainsRow condition commands]
+  (let [aggregateFunc (if (or (= (str/upper-case (first (str/split (first condition) #"\("))) (nth commands 11))
+                              (= (str/upper-case (first (str/split (first condition) #"\("))) (nth commands 12))
+                              (= (str/upper-case (first (str/split (first condition) #"\("))) (nth commands 13)))
+                        (str/upper-case (first (str/split (first condition) #"\(")))
+                        (str/upper-case (first (str/split (last condition) #"\("))))
+        indexOfAggFunc (if (str/starts-with? (str/upper-case (first condition)) aggregateFunc) 0 2)
+        rowToAggregate (subs (nth condition indexOfAggFunc)
+                             (+ (.indexOf (nth condition indexOfAggFunc) "(") 1)
+                             (- (count (nth condition indexOfAggFunc)) 1))]
+    (if (= "=" (nth condition 1))
+      (cond
+        (= aggregateFunc (nth commands 11))
+          (if (=
+              (if (= indexOfAggFunc 0)
+                (read-string (nth condition 2)) (read-string (nth condition 0)))
+                (read-string (get (first (countFunc (getColumn rowToAggregate tableContainsRow))) :count)))
+            true false)
+        (= aggregateFunc (nth commands 12))
+          (if (=
+              (if (= indexOfAggFunc 0)
+                (read-string (nth condition 2)) (read-string (nth condition 0)))
+                (read-string (get (first (avgFunc (getColumn rowToAggregate tableContainsRow))) :avg)))
+            true false)
+        (= aggregateFunc (nth commands 13))
+          (if (=
+              (if (= indexOfAggFunc 0)
+                (read-string (nth condition 2)) (read-string (nth condition 0)))
+                (read-string (get (first (minFunc (getColumn rowToAggregate tableContainsRow))) :min)))
+            true false))
+      (cond
+        (and (= aggregateFunc (nth commands 11)) (= 0 indexOfAggFunc))
+          (if (> (read-string (get (first (countFunc (getColumn rowToAggregate tableContainsRow))) :count))
+                 (read-string (nth condition 2))) true false)
+        (and (= aggregateFunc (nth commands 12)) (= 0 indexOfAggFunc))
+          (if (> (read-string (get (first (avgFunc (getColumn rowToAggregate tableContainsRow))) :avg))
+                 (read-string (nth condition 2))) true false)
+        (and (= aggregateFunc (nth commands 13)) (= 0 indexOfAggFunc))
+          (if (> (read-string (get (first (minFunc (getColumn rowToAggregate tableContainsRow))) :min))
+                 (read-string (nth condition 2))) true false)
+        (and (= aggregateFunc (nth commands 11)) (= 2 indexOfAggFunc))
+          (if (> (read-string (nth condition 2))
+                 (read-string (get (first (countFunc (getColumn rowToAggregate tableContainsRow))) :count)))
+            true false)
+        (and (= aggregateFunc (nth commands 12)) (= 2 indexOfAggFunc))
+          (if (> (read-string (nth condition 2))
+                 (read-string (get (first (avgFunc (getColumn rowToAggregate tableContainsRow))) :avg)))
+            true false)
+        (and (= aggregateFunc (nth commands 13)) (= 2 indexOfAggFunc))
+          (if (> (read-string (nth condition 2))
+                 (read-string (get (first (minFunc (getColumn rowToAggregate tableContainsRow))) :min)))
+            true false)))))
+
+(defn getBoolTableOfResults [distinctTable mainTable condition commands]
+  (map #(checkConditionForCurrRow
+          (filter (fn [currentRow] (containsForMap currentRow %)) mainTable) condition commands) distinctTable))
+
+(defn having [distinctTable mainTable condition commands]
+  (if (empty? condition)
+    distinctTable
+    (filter #(nth (getBoolTableOfResults distinctTable mainTable condition commands)
+                  (.indexOf distinctTable %)) distinctTable)))
+
+(defn deleteElementsMap [map keysForDelete]
+  (if (empty? keysForDelete) map
+    (deleteElementsMap (dissoc map (keyword (first keysForDelete))) (next keysForDelete))))
+
+(defn getTableGroupBy [file columns]
+  (let [elementsForDelete (vec (set/difference (set (map #(subs (str %) 1) (keys (first file)))) (set columns)))]
+    (distinct (map #(deleteElementsMap % elementsForDelete) file))))
+
+(defn groupByForAggregate [file resultTable column aggFunc]
+  (map #(first ((resolve (symbol aggFunc)) (getColumn
+                           (subs column (+ (.indexOf column "(") 1) (- (count column) 1))
+                           (filter (fn [currentRowFile]
+                                     (containsForMap currentRowFile %)) file)))) resultTable))
+
+(defn searchCorrCondCase [conditions currRow]
+  (let [indexOfValue (if (= -1 (.indexOf (keys currRow) (keyword (nth conditions 0)))) 0 2)]
+    (cond
+      (= 1 (count conditions))
+      (first conditions)
+      (= 4 (count conditions))
+      (if (= "=" (nth conditions 1))
+        (if (= 0 (compareForStringNumber (nth conditions indexOfValue)
+                                         (get currRow (keyword (nth conditions (if (= 0 indexOfValue) 2 0))))))
+          (nth conditions 3) "")
+        (if (= 0 indexOfValue)
+          (if (> (compareForStringNumber (nth conditions 0) (get currRow (keyword (nth conditions 2)))) 0)
+            (nth conditions 3) "")
+          (if (> (compareForStringNumber (get currRow (keyword (nth conditions 0))) (nth conditions 2)) 0)
+            (nth conditions 3) "")))
+      :else
+      (if (= "=" (nth conditions 1))
+        (if (= 0 (compareForStringNumber (nth conditions indexOfValue)
+                                         (get currRow (keyword (nth conditions (if (= 0 indexOfValue) 2 0))))))
+          (nth conditions 3) (searchCorrCondCase (subvec (vec conditions) 4 (count conditions)) currRow))
+        (if (= 0 indexOfValue)
+          (if (> (compareForStringNumber (nth conditions 0) (get currRow (keyword (nth conditions 2)))) 0)
+            (nth conditions 3) (searchCorrCondCase (subvec (vec conditions) 4 (count conditions)) currRow))
+          (if (> (compareForStringNumber (get currRow (keyword (nth conditions 0))) (nth conditions 2)) 0)
+            (nth conditions 3) (searchCorrCondCase (subvec (vec conditions) 4 (count conditions)) currRow)))))))
+
+(defn divideConditions [conditions commands & resultConditions]
+  (let [indexOfWhere (.indexOf (map #(str/upper-case %) conditions) (nth commands 23))
+        indexOfThen (.indexOf (map #(str/upper-case %) conditions) (nth commands 24))
+        indexOfElse (.indexOf (map #(str/upper-case %) conditions) (nth commands 25))]
+    (cond
+      (and (= 0 indexOfWhere) (= 4 indexOfThen) (= 6 (count conditions)))
+      (concat (if (empty? resultConditions) resultConditions (first resultConditions))
+              (subvec (vec conditions) 1 4) (conj [] (nth conditions 5)))
+      (and (= 0 indexOfWhere) (= 4 indexOfThen) (<= 8 (count conditions)))
+      (divideConditions (subvec (vec conditions) 6 (count conditions)) commands
+                        (concat (if (empty? resultConditions) resultConditions (first resultConditions))
+                                (subvec (vec conditions) 1 4) (conj [] (nth conditions 5))))
+      (= 0 indexOfElse)
+      (concat (if (empty? resultConditions) resultConditions (first resultConditions)) (conj [] (nth conditions 1)))
+      :else resultConditions)))
+
+(defn checkCaseCondition [file conditions nameOfMap commands]
+  (let [splitConditions (str/split conditions #"\s")
+        filteredConditions
+        (divideConditions (subvec (vec splitConditions)
+                                  (inc (.indexOf (map #(str/upper-case %) splitConditions) (nth commands 22)))
+                                  (.indexOf (map #(str/upper-case %) splitConditions) (nth commands 26))) commands)]
+    (map #(hash-map (keyword nameOfMap) (searchCorrCondCase filteredConditions %)) file)))
+
+(defn groupBy [file columns words commands]
+  (let [distinctTable (getTableGroupBy
+                        file (str/split (nth words (+ 2 (.indexOf
+                                                    (map #(str/upper-case %) words)
+                                                    (nth commands 20)))) #","))
+        havingCondition (conditionHaving (.indexOf (map #(str/upper-case %) words) (nth commands 21)) words)
+        resultTable (having distinctTable file havingCondition commands)]
+    (map #(let [splitCol (str/split % #" ")
+                indexOfNameCase (.indexOf (keys (first file)) (keyword (last splitCol)))]
+            (cond
+              (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
+                   (str/starts-with? (str/upper-case %) (nth commands 11)))
+                (groupByForAggregate file resultTable % "countFunc")
+              (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
+                   (str/starts-with? (str/upper-case %) (nth commands 12)))
+                (groupByForAggregate file resultTable % "avgFunc")
+              (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
+                   (str/starts-with? (str/upper-case %) (nth commands 13)))
+                (groupByForAggregate file resultTable % "minFunc")
+              (and (> (count splitCol) 1) (= (str/upper-case (first splitCol)) (nth commands 22)))
+              (if (or (not= -1 indexOfNameCase) (not= -1 (.indexOf (keys (first file)) "case")))
+                (getColumn (if (= -1 indexOfNameCase) "case" (last splitCol)) file)
+                (if (= (str/upper-case
+                         (nth splitCol (- (count splitCol) 2))) (nth commands 27))
+                  (checkCaseCondition file % (nth splitCol (- (count splitCol) 1)) commands)
+                  (checkCaseCondition file % "case" commands)))
+              :else (getColumn % resultTable)))
          columns)))
 
-(defn checkOrder [words commands]
-  (cond
-    (not= -1 (.indexOf (map #(str/upper-case %) words) (nth commands 10))) "pos?"
-    :else "neg?"))
+(defn checkForGroupBy [words commands]
+  (if (= 1 (- (.indexOf (map #(str/upper-case %) words) (nth commands 5))
+              (.indexOf (map #(str/upper-case %) words) (nth commands 20))))
+    true false))
 
-(defn getColumnsOrderBy [words commands]
-  (let [orderWords (nth words
-                        (+ 1
-                           (.indexOf (map #(str/upper-case %) words) (nth commands 5))))]
-    (map #(keyword %) (str/split orderWords #","))))
+(defn getAllColumns [file columns commands]
+  (map #(let [splitCol (str/split % #" ")
+              indexOfNameCase (.indexOf (keys (first file)) (keyword (last splitCol)))]
+          (cond
+            (= 0 (compare % "*"))
+            file
+            (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
+                 (= 2 (- (.indexOf % "(") (.indexOf % ")")))
+                 (= 0 (compare "*" (subs % (+ 1 (.indexOf % "(")) (- (count %) 1))))
+                 (str/starts-with? (str/upper-case %) (nth commands 11)))
+             (countFunc file)
+            (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
+                 (str/starts-with? (str/upper-case %) (nth commands 11)))
+             (countFunc (getColumn (subs % (+ 1 (.indexOf % "(")) (- (count %) 1)) file))
+            (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
+                 (str/starts-with? (str/upper-case %) (nth commands 12)))
+             (avgFunc (getColumn (subs % (+ 1 (.indexOf % "(")) (- (count %) 1)) file))
+            (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
+                 (str/starts-with? (str/upper-case %) (nth commands 13)))
+             (minFunc (getColumn (subs % (+ 1 (.indexOf % "(")) (- (count %) 1)) file))
+            (and (> (count splitCol) 1) (= (str/upper-case (first splitCol)) (nth commands 22)))
+             (if (or (not= -1 indexOfNameCase) (not= -1 (.indexOf (keys (first file)) "case")))
+               (getColumn (if (= -1 indexOfNameCase) "case" (last splitCol)) file)
+               (if (= (str/upper-case
+                        (nth splitCol (- (count splitCol) 2))) (nth commands 27))
+                 (checkCaseCondition file % (nth splitCol (- (count splitCol) 1)) commands)
+                 (checkCaseCondition file % "case" commands)))
+            :else (getColumn % file)))
+         columns))
 
-(defn myDistinct [table columns words commands]
-  (if (not= -1 (.indexOf columns "*"))
-    (let [file (distinct (mergeColumns table))]
-      (map #(if (not= 0 (compare % "*"))
-              (getColumn % (whereClause file words commands))
-              (whereClause file words commands))
-           columns))
-    (list (distinct (mergeColumns table)))))
-
-(defn withDistinct [words commands]
-  (cond
-    ; Bad query
-    (not= 0 (compare (str/upper-case (nth words 3)) (nth commands 1))) []
-    ; ORDER BY
-    (= 1 (- (.indexOf (map #(str/upper-case %) words) (nth commands 5))
-            (.indexOf (map #(str/upper-case %) words) (nth commands 4))))
-    (orderBy (myDistinct (getMainTable
-                           (str/split (nth words 2) #",") words commands)
-                         (str/split (nth words 2) #",")
-                         words commands) (resolve (symbol (checkOrder words commands)))
-             (getColumnsOrderBy words commands))
-    :else
-    ; default query with DISTINCT and maybe WHERE clauses
-    (myDistinct (getMainTable
-                  (str/split (nth words 2) #",") words commands)
-                (str/split (nth words 2) #",")
-                words commands)))
-
-(defn noDistinct [words commands]
-  (cond
-    ; Bad query
-    (not= 0 (compare (str/upper-case (nth words 2)) (nth commands 1))) []
-    ; ORDER BY
-    (= 1 (- (.indexOf (map #(str/upper-case %) words) (nth commands 5))
-            (.indexOf (map #(str/upper-case %) words) (nth commands 4))))
-    (orderBy
-      (getMainTable (str/split (nth words 1) #",") words commands)
-      (resolve (symbol (checkOrder words commands))) (getColumnsOrderBy words commands))
-    :else
-    ; default query maybe with WHERE clause
-    (getMainTable (str/split (nth words 1) #",") words commands)))
+(defn getMainTable [columns words commands]
+  (let [fileWithAllColumns (getFile (nth words (+ 1 (.indexOf (map #(str/upper-case %) words)
+                                                              (nth commands 1)))))
+        filteredFile (orderBy (whereClause (checkForJoin fileWithAllColumns words commands)
+                                           words commands) words commands)]
+    (if (checkForGroupBy words commands)
+      (myDistinct (groupBy filteredFile columns words commands) words commands)
+      (if (= -1 (.indexOf columns "*"))
+        (getAllColumns (first (myDistinct (mergeColumns
+                                            (getAllColumns filteredFile columns commands))
+                                          words commands)) columns commands)
+        (getAllColumns (first (myDistinct filteredFile words commands)) columns commands)))))
 
 (defn processColumns [words commands]
   (if (not= 0 (compare (str/upper-case (nth words 1)) (nth commands 3)))
-    ; check for DISTINCT clause
-    (noDistinct words commands)
-    (withDistinct words commands)))
+    (if (not= 0 (compare (str/upper-case (nth words 2)) (nth commands 1)))
+      [] (getMainTable (map #(str/trim %) (str/split (nth words 1) #",")) words commands))
+    (if (not= 0 (compare (str/upper-case (nth words 3)) (nth commands 1)))
+      [] (getMainTable (map #(str/trim %) (str/split (nth words 2) #",")) words commands))))
+
+(defn deeperParseForWords [words commands]
+  (let [indexOfFrom (.indexOf (map #(str/upper-case %) words) (nth commands 1))
+        indexOfDistinct (.indexOf (map #(str/upper-case %) words) (nth commands 3))]
+    (if (= -1 indexOfDistinct)
+      (concat (subvec (vec words) 0 1) (conj [] (str/join " " (subvec (vec words) 1 indexOfFrom)))
+              (subvec (vec words) indexOfFrom (count words)))
+      (concat (subvec (vec words) 0 2) (conj [] (str/join " " (subvec (vec words) 2 indexOfFrom)))
+              (subvec (vec words) indexOfFrom (count words))))))
 
 (defn getResult [expr commands]
-  (let [words (re-seq #"\"\D+\"|[\S]+" expr)]
+  (let [words (deeperParseForWords (re-seq #"\"\D+\"|[\S]+" expr) commands)]
     ; Expression must start with SELECT or select (noSens)
     (if (not= 0 (compare (str/upper-case (first words)) (first commands)))
       [] (processColumns words commands))))
@@ -617,8 +779,7 @@
   (let [input (read-line)
         commands ["SELECT" "FROM" "WHERE" "DISTINCT"
                   "ORDER" "BY" "AND" "OR" "NOT" "ASC" "DESC" "COUNT" "AVG" "MIN"
-                  "INNER" "FULL" "OUTER" "LEFT" "JOIN" "ON"]
+                  "INNER" "FULL" "OUTER" "LEFT" "JOIN" "ON" "GROUP"
+                  "HAVING" "CASE" "WHEN" "THEN" "ELSE" "END" "AS"]
         result (getResult input commands)]
     (printTable result)))
-
-(apply str (reverse "1234"))
