@@ -1,0 +1,35 @@
+Hi everyone, it's helper to my programm :)
+In this programm you can write your queryand get result.
+To exit from programm you need to write "quit", "QUIT", or "qUiT". You can try more variants and it will work.
+Okay, this programm can read your *.csv or *.tsv file and you can filter this files by using SQL queries.
+To check content of your file, you must write "select * from name_of_file". Name of file must contains extension.
+You can do next queries:
+
+SELECT column1, column2, ... FROM table_name;
+SELECT DISTINCT column1, column2, ... FROM table_name;
+SELECT * FROM Customers WHERE CustomerID = 1;
+SELECT * FROM Customers WHERE CustomerID > 1;
+SELECT column1, column2, ... FROM table_name WHERE condition1 AND NOT condition2 OR condition3 ...;
+SELECT column1, column2, ... FROM table_name ORDER BY column1, column2, ... ASC|DESC;
+-- Aggregate functions
+SELECT COUNT(Price) FROM Products;
+SELECT AVG(Price) FROM Products;
+SELECT MIN(Price) FROM Products;
+-- 3 types of join
+SELECT column_name(s) FROM table1 INNER JOIN table2 ON table1.column_name = table2.column_name;
+SELECT column_name(s) FROM table1 FULL OUTER JOIN table2 ON table1.column_name = table2.column_name WHERE condition;
+SELECT column_name(s) FROM table1 RIGHT JOIN table2 ON table1.column_name = table2.column_name;
+-- You can combine all joins.
+SELECT column_name(s) FROM table_name WHERE condition GROUP BY column_name(s) ORDER BY column_name(s);
+SELECT COUNT(CustomerID), Country FROM Customers GROUP BY Country HAVING COUNT(CustomerID) > 5;
+SELECT MIN(CustomerID), Country FROM Customers GROUP BY Country HAVING COUNT(CustomerID) = 5;
+-- You can use all types of aggregate functions which were given above.
+SELECT OrderID, Quantity,
+CASE
+ WHEN Quantity > 30 THEN "The quantity is greater than 30"
+ WHEN Quantity = 30 THEN "The quantity is 30" 
+ ELSE "The quantity is under 30" 
+END AS QuantityText FROM OrderDetails;
+-- In case you can give alias, but you can omit this, but you can omit it only 1 time in 1 query
+-- and it will has name "case".
+Remark: (in progress)

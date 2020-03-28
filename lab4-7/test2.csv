@@ -1,5 +1,5 @@
-id,name,prodSum
-1,Marko,3547
-2,Mav,25732
-3,rkoo,251435
-4,dlo,235536
+id,price,name
+1,40,banana
+2,100,iPhone
+3,50,ice-cream
+4,10,bread
