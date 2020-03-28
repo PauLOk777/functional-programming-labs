@@ -1,28 +1,28 @@
 Hi everyone, it's helper to my programm :)
-In this programm you can write your queryand get result.
-To exit from programm you need to write "quit", "QUIT", or "qUiT". You can try more variants and it will work.
-Okay, this programm can read your *.csv or *.tsv file and you can filter this files by using SQL queries.
+In this programm you can write your query and get result.
+To exit from programm you need to write "quit", "QUIT", or "qUiT". You can try more variants and it will works.
+Okay, this programm can read your *.csv or *.tsv files and you can filter this files by using SQL queries.
 To check content of your file, you must write "select * from name_of_file". Name of file must contains extension.
 You can do next queries:
 
-SELECT column1, column2, ... FROM table_name;
-SELECT DISTINCT column1, column2, ... FROM table_name;
-SELECT * FROM Customers WHERE CustomerID = 1;
-SELECT * FROM Customers WHERE CustomerID > 1;
-SELECT column1, column2, ... FROM table_name WHERE condition1 AND NOT condition2 OR condition3 ...;
-SELECT column1, column2, ... FROM table_name ORDER BY column1, column2, ... ASC|DESC;
+SELECT column1, column2, ... FROM table_name
+SELECT DISTINCT column1, column2, ... FROM table_name
+SELECT * FROM Customers WHERE CustomerID = 1
+SELECT * FROM Customers WHERE CustomerID > 1
+SELECT column1, column2, ... FROM table_name WHERE condition1 AND NOT condition2 OR condition3 ...
+SELECT column1, column2, ... FROM table_name ORDER BY column1, column2, ... ASC|DESC
 -- Aggregate functions
-SELECT COUNT(Price) FROM Products;
-SELECT AVG(Price) FROM Products;
-SELECT MIN(Price) FROM Products;
+SELECT COUNT(Price) FROM Products
+SELECT AVG(Price) FROM Products
+SELECT MIN(Price) FROM Products
 -- 3 types of join
-SELECT column_name(s) FROM table1 INNER JOIN table2 ON table1.column_name = table2.column_name;
-SELECT column_name(s) FROM table1 FULL OUTER JOIN table2 ON table1.column_name = table2.column_name WHERE condition;
-SELECT column_name(s) FROM table1 RIGHT JOIN table2 ON table1.column_name = table2.column_name;
+SELECT column_name(s) FROM table1 INNER JOIN table2 ON table1.column_name = table2.column_name
+SELECT column_name(s) FROM table1 FULL OUTER JOIN table2 ON table1.column_name = table2.column_name WHERE condition
+SELECT column_name(s) FROM table1 RIGHT JOIN table2 ON table1.column_name = table2.column_name
 -- You can combine all joins.
-SELECT column_name(s) FROM table_name WHERE condition GROUP BY column_name(s) ORDER BY column_name(s);
-SELECT COUNT(CustomerID), Country FROM Customers GROUP BY Country HAVING COUNT(CustomerID) > 5;
-SELECT MIN(CustomerID), Country FROM Customers GROUP BY Country HAVING COUNT(CustomerID) = 5;
+SELECT column_name(s) FROM table_name WHERE condition GROUP BY column_name(s) ORDER BY column_name(s)
+SELECT COUNT(CustomerID), Country FROM Customers GROUP BY Country HAVING COUNT(CustomerID) > 5
+SELECT MIN(CustomerID), Country FROM Customers GROUP BY Country HAVING COUNT(CustomerID) = 5 (and avg agrregate function)
 -- You can use all types of aggregate functions which were given above.
 SELECT OrderID, Quantity,
 CASE
@@ -32,4 +32,13 @@ CASE
 END AS QuantityText FROM OrderDetails;
 -- In case you can give alias, but you can omit this, but you can omit it only 1 time in 1 query
 -- and it will has name "case".
-Remark: (in progress)
+Remark: please, dont paste ";" in the end of query. 
+All conditions you must write seperated. You must paste spaces before and after operation "=" or ">".
+You can use only "=" and ">". For example: "select * from test.csv where col1 > 2 and col2 = "Paul"" 
+In clauses order by and group by you must write columns together. 
+For example "select * from test.csv order by col1,col2,col3 DESC".
+When you join your tables you must know that if 2 tables have same columns, second table will modified name of this columns.
+And in next join you must write next expression: name_of_column(name_of_table). And if name of table contains "."
+you must write it at square parentheses. For example:
+"select * from test1.csv inner join test2.csv on [test1.csv].id = [test2.csv].id inner join test3.csv on [test2.csv].id(test2.csv) = [test1.csv].id"
+That's all. Thank you for using this app :)
