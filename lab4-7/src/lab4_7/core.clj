@@ -58,29 +58,26 @@
               (recur (+ z 1))))
           (recur (+ j 1))))
       (println)
-      (recur (+ i 1))))
-  true)
+      (recur (+ i 1)))))
 
 (defn checkFormat [name]
   (let [formatFile (str/split name #"\.")]
     (if (= (str (nth formatFile 1)) "csv") true false)))
 
 (defn getFile [name]
-  (if (checkFormat name)
-    (makeTableCSV name)
-    (makeTableTSV name)))
+  (if (checkFormat name) (makeTableCSV name) (makeTableTSV name)))
 
 (defn compareForStringNumber [a b]
   (let [alterA (str a)
         alterB (str b)]
     (cond
-      (and (every? #(Character/isDigit %) alterA) (string? alterA))
+      (every? #(Character/isDigit %) alterA)
       (compare (read-string alterA) (read-string alterB))
       :else (compare alterA alterB))))
 
 (defn containsForMap [m1 m2]
   (and (every? (set (keys m1)) (keys m2))
-       (every? #(= (m1 %)(m2 %)) (keys m2))))
+       (every? #(= (m1 %) (m2 %)) (keys m2))))
 
 (defn getLastIndex [coll word]
   (if (not= -1 (.indexOf (reverse coll) word))
@@ -89,35 +86,25 @@
 (defn getColumn [columnName file]
   (map #(select-keys % [(keyword columnName)]) file))
 
-(defn myDistinct [table words commands]
-  (if (= -1 (.indexOf (map #(str/upper-case %) words) (nth commands 3)))
-    (list table) (list (distinct table))))
-
-(defn map-sort [a b & keysOfMap]
+(defn mapCompare [a b & keysOfMap]
   (cond
-    ; if map contains only 1 key and values are equal return 0
     (and (empty? keysOfMap)
          (= 0 (compareForStringNumber (get a (first (keys a))) (get b (first (keys b)))))
          (= 1 (count (keys a))))
     0
-    ; if map contains only 1 key and values have difference return compare
     (and (empty? keysOfMap)
          (not= 0 (compareForStringNumber (get a (first (keys a))) (get b (first (keys b)))))
          (= 1 (count (keys a))))
     (compareForStringNumber (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))
-    ; if map contains more then 1 key and first values of first key are equal return next keys
     (and (empty? keysOfMap)
          (= 0 (compareForStringNumber (get a (first (keys a))) (get b (first (keys b))))))
-    (map-sort a b (next (keys a)))
-    ; if last values are equal return 0
+    (mapCompare a b (next (keys a)))
     (and (= 1 (count (first keysOfMap)))
          (= 0 (compareForStringNumber (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))))
     0
-    ; if values are equals return next keys
     (and (> (count (first keysOfMap)) 1)
          (= 0 (compareForStringNumber (get a (first (first keysOfMap))) (get b (first (first keysOfMap))))))
-    (map-sort a b (next (first keysOfMap)))
-    ; if values have difference return compare
+    (mapCompare a b (next (first keysOfMap)))
     (empty? keysOfMap)
     (compareForStringNumber (get a (first (keys a))) (get b (first (keys b))))
     :else
@@ -126,11 +113,11 @@
 (defn mergeStep [l r ord columns]
   (cond (empty? l) r
         (empty? r) l
-        (and (empty? columns) (ord (map-sort (first l) (first r))))
+        (and (empty? columns) (ord (mapCompare (first l) (first r))))
         (cons (first l) (mergeStep (next l) r ord columns))
-        (and (empty? columns) (not (ord (map-sort (first l) (first r)))))
+        (and (empty? columns) (not (ord (mapCompare (first l) (first r)))))
         (cons (first r) (mergeStep l (next r) ord columns))
-        (ord (map-sort (first l) (first r) columns))
+        (ord (mapCompare (first l) (first r) columns))
         (cons (first l) (mergeStep (next l) r ord columns))
         :else
         (cons (first r) (mergeStep l (next r) ord columns))))
@@ -162,17 +149,14 @@
                        (getColumnsOrderBy words (inc indexOfOrder))))))
 
 (defn countFunc [table]
-  (if (not= 1 (count (keys (first table))))
-    (list (hash-map :count (count table)))
-    (list (hash-map :count (count (filter #(not= "" (get % (first (keys %)))) table))))))
+    (list (hash-map :count (count (filter #(not (every? (fn [value] (= "" value)) (vals %))) table)))))
 
 (defn sumForReduceMap [& body]
   (let [firstValueOfMap (get (first body) (first (keys (first body))))
         secondValueOfMap (get (second body) (first (keys (second body))))]
     (cond
-      (= 1 (count body))
-      (if (number? (first body))
-        (first body) (read-string (first body)))
+      (= "" (first (vals (second body))))
+      (first body)
       (and (number? firstValueOfMap) (number? secondValueOfMap))
       (merge-with + (first body) (second body))
       (and (string? firstValueOfMap) (string? secondValueOfMap))
@@ -196,8 +180,9 @@
 (defn minForReduceMap [& body]
   (let [firstValueOfMap (get (first body) (first (keys (first body))))
         secondValueOfMap (get (second body) (first (keys (second body))))]
-    (if (and (map? (first body))
-             (>= 0 (compareForStringNumber firstValueOfMap secondValueOfMap)))
+    (if (or (= "" (first (vals (second body))))
+            (and (map? (first body))
+                 (<= (compareForStringNumber firstValueOfMap secondValueOfMap) 0)))
       (first body) (second body))))
 
 (defn minFunc [column]
@@ -217,24 +202,33 @@
       (subvec (vec words) (+ 1 indexOfWhere) (+ 4 (max lastIndexOfAnd lastIndexOfOr lastIndexOfNot))))))
 
 (defn checkTruth [row condition]
-  (cond
-    (and (= 0 (compare (nth condition 1) "="))
-         (every? #(Character/isDigit %) (nth condition 2)))
-    (if (= (read-string (nth condition 2))
-           (read-string (get row (keyword (nth condition 0))))) true false)
-    (and (= 0 (compare (nth condition 1) ">"))
-         (every? #(Character/isDigit %) (nth condition 2)))
-    (if (< 0 (compareForStringNumber (read-string (get row (keyword (nth condition 0))))
-                                     (read-string (nth condition 2))))
-      true false)
-    (and (= 0 (compare (nth condition 1) "=")))
-    (if (= 0 (compare (get row (keyword (nth condition 0)))
-                      (subs (nth condition 2) (+ (str/index-of (nth condition 2) "\"") 1)
-                            (str/last-index-of (nth condition 2) "\"")))) true false)
-    (and (= 0 (compare (nth condition 1) ">")))
-    (if (< 0 (compare (get row (keyword (nth condition 0)))
-                      (subs (nth condition 2) (+ (str/index-of (nth condition 2) "\"") 1)
-                            (str/last-index-of (nth condition 2) "\"")))) true false)))
+  (let [indexOfValue (if (= -1 (.indexOf (keys row) (keyword (nth condition 0)))) 0 2)
+        indexOfColumn (if (= 0 indexOfValue) 2 0)]
+    (cond
+      (and (= 0 (compare (nth condition 1) "="))
+           (every? #(Character/isDigit %) (nth condition indexOfValue)))
+      (if (= (read-string (nth condition indexOfValue))
+             (read-string (get row (keyword (nth condition indexOfColumn))))) true false)
+      (and (= 0 (compare (nth condition 1) ">"))
+           (every? #(Character/isDigit %) (nth condition indexOfValue)))
+      (if (= 0 indexOfValue)
+        (if (> (compareForStringNumber (read-string (nth condition indexOfValue))
+                                         (read-string (get row (keyword (nth condition indexOfColumn))))) 0)
+          true false)
+        (if (> (compareForStringNumber (read-string (get row (keyword (nth condition indexOfColumn))))
+                                         (read-string (nth condition indexOfValue))) 0) true false))
+      (and (= 0 (compare (nth condition 1) "=")))
+      (if (= 0 (compare (get row (keyword (nth condition indexOfColumn)))
+                        (subs (nth condition indexOfValue) (+ (str/index-of (nth condition indexOfValue) "\"") 1)
+                              (str/last-index-of (nth condition indexOfValue) "\"")))) true false)
+      (and (= 0 (compare (nth condition 1) ">")))
+      (if (= 0 indexOfValue)
+        (if (> (compare (subs (nth condition indexOfValue) (+ (str/index-of (nth condition indexOfValue) "\"") 1)
+                              (str/last-index-of (nth condition indexOfValue) "\""))
+                 (get row (keyword (nth condition indexOfColumn)))) 0) true false)
+        (if (> (compare (get row (keyword (nth condition indexOfColumn)))
+                          (subs (nth condition indexOfValue) (+ (str/index-of (nth condition indexOfValue) "\"") 1)
+                                (str/last-index-of (nth condition indexOfValue) "\""))) 0) true false)))))
 
 (defn andOrNotCondition [row condition commands logicOp]
   (let [indexOfNot (.indexOf (map #(str/upper-case %) condition) (nth commands 8))]
@@ -321,20 +315,18 @@
       :else
       (checkAllConditions
         row
-        (conj (subvec (vec conditions)
+          (conj (subvec (vec conditions)
                       0 (+ 1 (indexBeforeLastBoolOp conditions lastIndexOfOr commands)))
               (andOrNotCondition
                 row
                 (subvec (vec conditions)
                         (+ 1 (indexBeforeLastBoolOp conditions lastIndexOfOr commands)) (count conditions))
                 commands (nth commands 7)))
-        commands)
-      )))
+        commands))))
 
 (defn whereClause [table words commands]
-  (let [conditions (parseConditions words commands)]
     (if (not= -1 (.indexOf (map #(str/upper-case %) words) (nth commands 2)))
-      (filter #(checkAllConditions % conditions commands) table) table)))
+      (filter #(checkAllConditions % (parseConditions words commands) commands) table) table))
 
 (defn mergeColStep [indexRow indexColumn table & map]
   (if (= 1 (- (count table) indexColumn))
@@ -813,23 +805,24 @@
             (= 0 (compare % "*"))
             file
             (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
-                 (= 2 (- (.indexOf % "(") (.indexOf % ")")))
+                 (= 2 (- (.indexOf % ")") (.indexOf % "(")))
                  (= 0 (compare "*" (subs % (+ 1 (.indexOf % "(")) (- (count %) 1))))
                  (str/starts-with? (str/upper-case %) (nth commands 11)))
-              (if (= :count (first (keys (first file)))) (getColumn "count" file) (countFunc file))
+              (if (not= -1 (.indexOf (keys (first file)) :count))
+                (getColumn "count" file) (countFunc file))
             (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
                  (str/starts-with? (str/upper-case %) (nth commands 11)))
-            (if (= :count (first (keys (first file))))
+            (if (not= -1 (.indexOf (keys (first file)) :count))
               (getColumn "count" file)
               (countFunc (getColumn (subs % (+ 1 (.indexOf % "(")) (- (count %) 1)) file)))
             (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
                  (str/starts-with? (str/upper-case %) (nth commands 12)))
-            (if (= :avg (first (keys (first file))))
+            (if (not= -1 (.indexOf (keys (first file)) :avg))
               (getColumn "avg" file)
               (avgFunc (getColumn (subs % (+ 1 (.indexOf % "(")) (- (count %) 1)) file)))
             (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
                  (str/starts-with? (str/upper-case %) (nth commands 13)))
-            (if (= :min (first (keys (first file))))
+            (if (not= -1 (.indexOf (keys (first file)) :min))
               (getColumn "min" file)
               (minFunc (getColumn (subs % (+ 1 (.indexOf % "(")) (- (count %) 1)) file)))
             (and (> (count splitCol) 1) (= (str/upper-case (first splitCol)) (nth commands 22)))
@@ -852,12 +845,10 @@
       (if (= -1 (.indexOf (map #(str/upper-case %) words) (nth commands 3)))
         (getAllColumns filteredFile columns commands)
         (if (= -1 (.indexOf columns "*"))
-          (getAllColumns (first (myDistinct (mergeColumns
-                                              (getAllColumns filteredFile columns commands))
-                                            words commands)) columns commands)
-          (getAllColumns (first (myDistinct filteredFile words commands)) columns commands))))))
+          (getAllColumns (distinct (mergeColumns (getAllColumns filteredFile columns commands))) columns commands)
+          (getAllColumns (distinct filteredFile) columns commands))))))
 
-(defn processColumns [words commands]
+(defn getCorrectTable [words commands]
   (if (not= 0 (compare (str/upper-case (nth words 1)) (nth commands 3)))
     (if (not= 0 (compare (str/upper-case (nth words 2)) (nth commands 1)))
       [] (getMainTable (map #(str/trim %) (str/split (nth words 1) #",")) words commands))
@@ -876,7 +867,7 @@
 (defn getResult [expr commands]
   (let [words (deeperParseForWords (re-seq #"\"[^\"]+\"|[\S]+" expr) commands)]
     (if (not= 0 (compare (str/upper-case (first words)) (first commands)))
-      [] (processColumns words commands))))
+      [] (getCorrectTable words commands))))
 
 (defn view []
   (println "Write your query below:")
@@ -889,6 +880,5 @@
 
 (defn createHelp [] (println (slurp "Help.txt")) true)
 
-(defn -main
-  [& args]
+(defn -main [& args]
   (do (createHelp) (view)))

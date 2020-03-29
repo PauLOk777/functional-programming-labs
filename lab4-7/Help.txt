@@ -40,5 +40,7 @@ For example "select * from test.csv order by col1,col2,col3 DESC".
 When you join your tables you must know that if 2 tables have same columns, second table will modified name of this columns.
 And in next join you must write next expression: name_of_column(name_of_table). And if name of table contains "."
 you must write it at square parentheses. For example:
-"select * from test1.csv inner join test2.csv on [test1.csv].id = [test2.csv].id inner join test3.csv on [test2.csv].id(test2.csv) = [test1.csv].id"
+"select * from test1.csv inner join test2.csv on [test1.csv].id = [test2.csv].id inner join test3.csv on [test2.csv].id(test2.csv) = [test1.csv].id".
+At list you can use only 1 aggregate function of same type. For example:
+"select count(id),min(price) from test.csv" - correct "select count(id),count(price) from test.csv" - error.
 That's all. Thank you for using this app :)
