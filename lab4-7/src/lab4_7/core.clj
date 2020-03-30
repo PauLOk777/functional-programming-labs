@@ -169,7 +169,8 @@
 (defn avgFunc [column]
   (let [sumOfMaps (if (= 1 (count column))
                     (if (number? (first (vals (first column))))
-                      (first column) (hash-map (first (keys (first column)))
+                      (if (string? (first column)) (read-string (first column)) (first column))
+                      (hash-map (first (keys (first column)))
                                                (read-string (first (vals (first column))))))
                     (reduce sumForReduceMap column))
         numberOfElementsMap (countFunc column)
@@ -186,8 +187,11 @@
       (first body) (second body))))
 
 (defn minFunc [column]
-  (let [minValueMap (if (= 1 (count column)) (first column) (reduce minForReduceMap column))]
-    (list (set/rename-keys minValueMap {(first (keys minValueMap)) :min}))))
+  (let [minValueMap (if (= 1 (count column)) (first column) (reduce minForReduceMap column))
+        updatedMinMap (if (string? (first (vals minValueMap)))
+                        (assoc minValueMap (first (keys minValueMap))
+                                           (read-string (first (vals minValueMap)))) minValueMap)]
+    (list (set/rename-keys updatedMinMap {(first (keys updatedMinMap)) :min}))))
 
 (defn parseConditions [words commands]
   (let [indexOfWhere (.indexOf (map #(str/upper-case %) words) (nth commands 2))
@@ -498,9 +502,7 @@
                       (last (str/split (last condition) #"\.")) textInParenthesesLast))))))
 
 (defn renameMapKeys [table sameKeys tableName]
-  (map #(set/rename-keys
-          % (zipmap sameKeys
-                    (map (fn [currKey]
+  (map #(set/rename-keys % (zipmap sameKeys (map (fn [currKey]
                            (keyword (subs (str currKey "(" tableName ")") 1))) sameKeys))) table))
 
 (defn joinTables [table words commands]
@@ -651,17 +653,19 @@
 
 (defn getBoolTableOfResults [distinctTable mainTable condition commands]
   (map #(checkConditionForCurrRow
-          (filter (fn [currentRow] (containsForMap currentRow %)) mainTable) condition commands) distinctTable))
+          (filter (fn [currentRow] (containsForMap currentRow %)) mainTable) condition commands)
+       distinctTable))
 
 (defn having [distinctTable mainTable condition commands]
-  (if (empty? condition)
-    distinctTable
-    (filter #(nth (getBoolTableOfResults distinctTable mainTable condition commands)
-                  (.indexOf distinctTable %)) distinctTable)))
+  (let [boolTable (getBoolTableOfResults distinctTable mainTable condition commands)]
+    (if (empty? condition)
+      distinctTable
+      (filter #(nth boolTable (.indexOf distinctTable %)) distinctTable))))
 
 (defn deleteElementsMap [map keysForDelete]
-  (if (empty? keysForDelete) map
-                             (deleteElementsMap (dissoc map (keyword (first keysForDelete))) (next keysForDelete))))
+  (if (empty? keysForDelete)
+    map
+    (deleteElementsMap (dissoc map (keyword (first keysForDelete))) (next keysForDelete))))
 
 (defn getTableGroupBy [file columns]
   (let [elementsForDelete (vec (set/difference (set (map #(subs (str %) 1) (keys (first file)))) (set columns)))]
@@ -672,18 +676,18 @@
     (= "countFunc" aggFunc)
       (map #(first (countFunc
                      (getColumn (subs column (+ (.indexOf column "(") 1) (- (count column) 1))
-                                (filter (fn [currentRowFile] (containsForMap currentRowFile %))
-                                        file)))) resultTable)
+                                (filter (fn [currentRowFile] (containsForMap currentRowFile %)) file))))
+           resultTable)
     (= "avgFunc" aggFunc)
       (map #(first (avgFunc
                      (getColumn (subs column (+ (.indexOf column "(") 1) (- (count column) 1))
-                                (filter (fn [currentRowFile] (containsForMap currentRowFile %))
-                                        file)))) resultTable)
+                                (filter (fn [currentRowFile] (containsForMap currentRowFile %)) file))))
+           resultTable)
     (= "minFunc" aggFunc)
       (map #(first (minFunc
                      (getColumn (subs column (+ (.indexOf column "(") 1) (- (count column) 1))
-                                (filter (fn [currentRowFile] (containsForMap currentRowFile %))
-                                        file)))) resultTable)))
+                                (filter (fn [currentRowFile] (containsForMap currentRowFile %)) file))))
+           resultTable)))
 
 (defn searchCorrCondCase [conditions currRow]
   (let [indexOfValue (if (= -1 (.indexOf (keys currRow) (keyword (nth conditions 0)))) 0 2)]
@@ -748,7 +752,7 @@
       (and (= 0 indexOfWhere) (= 4 indexOfThen) (= 6 (count conditions)))
       (concat (if (empty? resultConditions) resultConditions (first resultConditions))
               (subvec (vec conditions) 1 4) (conj [] (nth conditions 5)))
-      (and (= 0 indexOfWhere) (= 4 indexOfThen) (<= 8 (count conditions)))
+      (and (= 0 indexOfWhere) (= 4 indexOfThen) (< 6 (count conditions)))
       (divideConditions (subvec (vec conditions) 6 (count conditions)) commands
                         (concat (if (empty? resultConditions) resultConditions (first resultConditions))
                                 (subvec (vec conditions) 1 4) (conj [] (nth conditions 5))))
@@ -771,7 +775,7 @@
                                                           (nth commands 20)))) #","))
         havingCondition (conditionHaving (.indexOf (map #(str/upper-case %) words) (nth commands 21)) words)
         resultTable (having distinctTable file havingCondition commands)]
-    (map #(let [splitCol (str/split % #" ")
+    (map #(let [splitCol (re-seq #"\"[^\"]+\"|[\S]+" %)
                 indexOfNameCase (.indexOf (keys (first file)) (keyword (last splitCol)))]
             (cond
               (and (not= -1 (.indexOf % "(")) (not= -1 (.indexOf % ")"))
